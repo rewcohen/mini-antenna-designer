@@ -1,0 +1,47 @@
+2025-12-11 17:17:29.793 | WARNING  | core:__init__:52 - NEC2 executable not found: NEC2 executable not found. Please specify nec2_path or install NEC2. - using mock simulation mode
+2025-12-11 17:17:29.794 | INFO     | design:__init__:21 - Antenna design initialized for 4.0x2.0 inch substrate
+2025-12-11 17:17:29.794 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
+2025-12-11 17:17:29.794 | INFO     | design_generator:__init__:19 - Antenna design generator initialized with advanced meander capability
+2025-12-11 17:17:29.794 | INFO     | export:__init__:33 - Vector exporter initialized with output dir: exports
+2025-12-11 17:17:29.795 | INFO     | design_generator:generate_design:32 - Generating design for TV VHF High: 174/200/216 MHz
+2025-12-11 17:17:29.795 | INFO     | design_generator:_determine_design_type:89 - Design type analysis for TV VHF High:
+2025-12-11 17:17:29.795 | INFO     | design_generator:_determine_design_type:90 -   Frequencies: 174/200/216 MHz
+2025-12-11 17:17:29.795 | INFO     | design_generator:_determine_design_type:91 -   Frequency ratios: [1.1494252873563218, 1.2413793103448276, 1.08]
+2025-12-11 17:17:29.795 | INFO     | design_generator:_determine_design_type:92 -   Average ratio: 1.157
+2025-12-11 17:17:29.795 | INFO     | design_generator:_determine_design_type:93 -   Band type: tv_broadcast
+2025-12-11 17:17:29.795 | INFO     | design_generator:_determine_design_type:104 -   Selected: advanced_meander_tri_band (close frequencies, ratio < 1.8)
+2025-12-11 17:17:29.796 | INFO     | design_generator:_generate_geometry_for_type:117 - Generating advanced_meander_tri_band geometry for frequencies 174/200/216 MHz
+2025-12-11 17:17:29.796 | INFO     | design_generator:_generate_advanced_meander_tri_band:547 - Generating advanced meander tri-band design for 174/200/216 MHz
+2025-12-11 17:17:29.796 | INFO     | design:generate_multi_band_meanders:882 - Generating multi-band meanders for 3 frequencies: [174, 200, 216]
+2025-12-11 17:17:29.796 | INFO     | design:generate_multi_band_meanders:909 - Using layout strategy: triple_vertical
+2025-12-11 17:17:29.796 | INFO     | design:calculate_target_length:545 - Target length: f=174.0MHz, kc=0.90, L_target=30.52" (775.3mm)
+2025-12-11 17:17:29.796 | INFO     | design:optimize_meander_geometry:585 - Optimizing meander: W=3.90", H=1.90", L_target=30.52"
+2025-12-11 17:17:29.796 | INFO     | design:optimize_meander_geometry:652 - Optimized meander: N=8, pitch=0.195", error=0.282", utilization=100.9%
+2025-12-11 17:17:29.796 | INFO     | design:_create_meander_geometry:798 - Generated advanced meander: 65 segments, 30.81" total length
+2025-12-11 17:17:29.796 | WARNING  | design:calculate_effective_permittivity:489 - Invalid dimensions: w=0.0, h=0.063
+2025-12-11 17:17:29.797 | INFO     | design:generate_multi_band_meanders:944 - Generated meander for band 1 (174 MHz): 650 segments
+2025-12-11 17:17:29.797 | INFO     | design:calculate_target_length:545 - Target length: f=200.0MHz, kc=0.90, L_target=26.56" (674.5mm)
+2025-12-11 17:17:29.797 | INFO     | design:optimize_meander_geometry:585 - Optimizing meander: W=3.90", H=1.90", L_target=26.56"
+2025-12-11 17:17:29.797 | INFO     | design:optimize_meander_geometry:652 - Optimized meander: N=7, pitch=0.225", error=0.384", utilization=101.4%
+2025-12-11 17:17:29.797 | INFO     | design:_create_meander_geometry:798 - Generated advanced meander: 56 segments, 26.94" total length
+2025-12-11 17:17:29.797 | WARNING  | design:calculate_effective_permittivity:489 - Invalid dimensions: w=0.0, h=0.063
+2025-12-11 17:17:29.797 | INFO     | design:generate_multi_band_meanders:944 - Generated meander for band 2 (200 MHz): 560 segments
+2025-12-11 17:17:29.798 | INFO     | design:calculate_target_length:545 - Target length: f=216.0MHz, kc=0.90, L_target=24.59" (624.6mm)
+2025-12-11 17:17:29.798 | INFO     | design:optimize_meander_geometry:585 - Optimizing meander: W=3.90", H=1.90", L_target=24.59"
+2025-12-11 17:17:29.798 | INFO     | design:optimize_meander_geometry:652 - Optimized meander: N=6, pitch=0.254", error=1.515", utilization=93.8%
+2025-12-11 17:17:29.798 | INFO     | design:_create_meander_geometry:790 - Added tuning stub: 1.515 inches
+2025-12-11 17:17:29.798 | INFO     | design:_create_meander_geometry:798 - Generated advanced meander: 48 segments, 23.07" total length
+2025-12-11 17:17:29.798 | WARNING  | design:calculate_effective_permittivity:489 - Invalid dimensions: w=0.0, h=0.063
+2025-12-11 17:17:29.798 | INFO     | design:generate_multi_band_meanders:944 - Generated meander for band 3 (216 MHz): 480 segments
+2025-12-11 17:17:29.798 | INFO     | design:generate_multi_band_meanders:952 - Combined multi-band geometry: 3 bands, 1690 total segments
+2025-12-11 17:17:29.798 | INFO     | design:_calculate_optimization_summary:1210 - Optimization summary: quality_score=35.0, efficiency=0.0%, spatial_utilization=0.0%
+2025-12-11 17:17:29.799 | INFO     | design_generator:_generate_advanced_meander_tri_band:568 - Advanced meander tri-band generated: 35.0 quality score
+2025-12-11 17:17:29.803 | INFO     | design_generator:_combine_geometries:233 - Combined 169 total wires from 1 geometries
+2025-12-11 17:17:29.803 | INFO     | design_generator:_generate_geometry_for_type:180 - Generated advanced_meander_tri_band geometry with 1 element(s), 8633 total characters
+2025-12-11 17:17:29.804 | INFO     | export:__init__:33 - Vector exporter initialized with output dir: exports
+2025-12-11 17:17:29.805 | INFO     | core:run_simulation:94 - Running NEC2 simulation for 174 MHz
+2025-12-11 17:17:29.806 | INFO     | core:run_simulation:94 - Running NEC2 simulation for 200 MHz
+2025-12-11 17:17:29.806 | INFO     | core:run_simulation:94 - Running NEC2 simulation for 216 MHz
+2025-12-11 17:17:29.807 | INFO     | core:run_simulation:102 - Simulation completed for 3 frequencies
+2025-12-11 17:17:29.807 | INFO     | design_generator:generate_design:61 - Design generation completed: advanced_meander_tri_band with success
+2025-12-11 17:17:29.808 | INFO     | export:export_geometry:63 - Exported tv_vhf_high_meander to SVG format

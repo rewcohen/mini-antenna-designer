@@ -1,0 +1,7 @@
+numpy>=1.21.0
+scipy>=1.7.0
+matplotlib>=3.4.0
+shapely>=1.8.0
+svglib>=1.2.0
+ezdxf>=1.0.0
+loguru>=0.6.0
