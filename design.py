@@ -717,91 +717,186 @@ class AdvancedMeanderTrace:
             str: NEC2 geometry cards
         """
         try:
-            geometry = []
-            gw_tag = 1
-            
-            N = params['N']
-            pitch = params['pitch_inches']
-            margin = params['margin_inches']
-            bend_radius = params['bend_radius_inches']
-            trace_width = params['trace_width_inches']
-            lane_length = params['lane_length_inches']
-            
-            # Starting position (center-left)
-            x_start = -lane_length / 2
-            y_start = -(N - 1) * pitch / 2
-            
-            # Generate meander pattern
-            current_x = x_start
-            current_y = y_start
-            direction = 1  # Start going right
-            
-            for lane in range(N):
-                # Horizontal segment
-                if direction == 1:
-                    x_end = current_x + lane_length
-                else:
-                    x_end = current_x - lane_length
-                
-                # Add horizontal wire
-                geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 {x_end:.4f} {current_y:.4f} 0 {trace_width:.4f}")
-                gw_tag += 1
-                
-                current_x = x_end
-                
-                # Add U-turn (except for last lane)
-                if lane < N - 1:
-                    # Vertical segment up/down
-                    next_y = current_y + pitch if direction == 1 else current_y - pitch
-                    
-                    # Create smooth U-turn using multiple segments
-                    segments_per_turn = 8
-                    for i in range(segments_per_turn):
-                        angle1 = (i / segments_per_turn) * math.pi / 2
-                        angle2 = ((i + 1) / segments_per_turn) * math.pi / 2
-                        
-                        if direction == 1:
-                            # Right turn
-                            x1 = current_x - bend_radius * math.cos(angle1)
-                            y1 = current_y + bend_radius * math.sin(angle1)
-                            x2 = current_x - bend_radius * math.cos(angle2)
-                            y2 = current_y + bend_radius * math.sin(angle2)
-                        else:
-                            # Left turn
-                            x1 = current_x + bend_radius * math.cos(angle1)
-                            y1 = current_y - bend_radius * math.sin(angle1)
-                            x2 = current_x + bend_radius * math.cos(angle2)
-                            y2 = current_y - bend_radius * math.sin(angle2)
-                        
-                        geometry.append(f"GW {gw_tag} 1 {x1:.4f} {y1:.4f} 0 {x2:.4f} {y2:.4f} 0 {trace_width:.4f}")
-                        gw_tag += 1
-                    
-                    current_y = next_y
-                    direction *= -1  # Reverse direction
-            
-            # Add tuning stub if needed
-            if params.get('tuning_stub_inches', 0) > 0.01:
-                stub_length = params['tuning_stub_inches']
-                # Add stub at the end of the meander
-                stub_direction = -1 if direction == 1 else 1
-                x_stub_end = current_x + stub_direction * stub_length
-                geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 {x_stub_end:.4f} {current_y:.4f} 0 {trace_width:.4f}")
-                gw_tag += 1
-                logger.info(f"Added tuning stub: {stub_length:.3f} inches")
-            
-            # Add feed point connection
-            feed_x = 0
-            feed_y = y_start
-            geometry.append(f"GW {gw_tag} 1 {feed_x:.4f} {feed_y:.4f} 0 {x_start:.4f} {y_start:.4f} 0 {trace_width:.4f}")
-            
-            nec_geometry = "\n".join(geometry)
-            logger.info(f"Generated advanced meander: {len(geometry)} segments, {params['total_length_inches']:.2f}\" total length")
-            
-            return nec_geometry
+            # Use the new dual-side spiral dipole generator
+            return self._create_dual_spiral_dipole(params)
             
         except Exception as e:
             logger.error(f"Meander geometry creation failed: {str(e)}")
             return ""
+    
+    def _create_dual_spiral_dipole(self, params: Dict[str, Any]) -> str:
+        """Create a dual-side spiral dipole antenna for maximum space utilization.
+        
+        Args:
+            params: Optimized geometry parameters
+            
+        Returns:
+            str: NEC2 geometry cards
+        """
+        try:
+            geometry = []
+            gw_tag = 1
+            
+            # Extract parameters
+            trace_width = params.get('trace_width_inches', 0.010)
+            min_spacing = trace_width * 2.5  # Minimum spacing between positive/negative sides
+            target_length = params.get('total_length_inches', 30.0)
+            
+            logger.info(f"Creating dual-side spiral dipole: target_length={target_length:.2f}\", trace_width={trace_width:.4f}\", min_spacing={min_spacing:.4f}\"")
+            
+            # Calculate half-length for each dipole side
+            half_length = target_length / 2
+            
+            # Substrate bounds (in inches)
+            max_x = self.substrate_width / 2 - 0.1  # Leave margin
+            max_y = self.substrate_height / 2 - 0.1
+            
+            # Generate positive spiral (top side)
+            positive_spiral, pos_tag = self._generate_spiral_arm(
+                start_x=0, start_y=0,
+                target_length=half_length,
+                max_x=max_x, max_y=max_y,
+                direction='up',  # Spiral upward and to the right
+                trace_width=trace_width,
+                side_name='positive',
+                start_tag=gw_tag
+            )
+            
+            # Generate negative spiral (bottom side)
+            negative_spiral, neg_tag = self._generate_spiral_arm(
+                start_x=0, start_y=0,
+                target_length=half_length,
+                max_x=max_x, max_y=max_y,
+                direction='down',  # Spiral downward and to the right
+                trace_width=trace_width,
+                side_name='negative',
+                start_tag=pos_tag
+            )
+            
+            # Combine both spirals
+            geometry.extend(positive_spiral)
+            geometry.extend(negative_spiral)
+            
+            # Add feed point connection (center point where both sides meet)
+            geometry.append(f"GW {neg_tag} 1 0 0 0 0 0 0 {trace_width:.4f}")
+            
+            nec_geometry = "\n".join(geometry)
+            total_segments = len(geometry)
+            
+            # Calculate actual achieved length
+            actual_length = sum(self._calculate_segment_length(seg) for seg in geometry)
+            length_error = abs(actual_length - target_length) / target_length * 100
+            
+            logger.info(f"Generated dual-side spiral dipole: {total_segments} segments")
+            logger.info(f"Target length: {target_length:.2f}\", Achieved: {actual_length:.2f}\" ({length_error:.1f}% error)")
+            
+            return nec_geometry
+            
+        except Exception as e:
+            logger.error(f"Dual-side spiral dipole creation failed: {str(e)}")
+            return ""
+    
+    def _calculate_segment_length(self, gw_line: str) -> float:
+        """Calculate physical length of a wire segment from GW line.
+
+        Args:
+            gw_line: NEC2 GW geometry card string
+
+        Returns:
+            float: Physical length of the segment in inches
+        """
+        import math
+        parts = gw_line.split()
+        if len(parts) >= 8:
+            try:
+                x1, y1, z1 = float(parts[3]), float(parts[4]), float(parts[5])
+                x2, y2, z2 = float(parts[6]), float(parts[7]), float(parts[8])
+                return math.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
+            except (ValueError, IndexError):
+                return 0.0
+        return 0.0
+
+    def _generate_spiral_arm(self, start_x: float, start_y: float, target_length: float,
+                            max_x: float, max_y: float, direction: str,
+                            trace_width: float, side_name: str, start_tag: int) -> tuple:
+        """Generate one arm of a spiral dipole with proper meander pattern.
+
+        Args:
+            start_x, start_y: Starting coordinates (feed point)
+            target_length: Target electrical length for this arm
+            max_x, max_y: Maximum bounds for spiral
+            direction: 'up' or 'down' - which side of substrate to use
+            trace_width: Width of trace
+            side_name: 'positive' or 'negative' for logging
+            start_tag: Starting GW tag number
+
+        Returns:
+            tuple: (list of geometry strings, final tag number)
+        """
+        try:
+            geometry = []
+            gw_tag = start_tag
+            current_length = 0.0
+
+            # Starting position (feed point)
+            current_x = start_x
+            current_y = start_y
+
+            # Use a simpler meander pattern similar to pattern_generator.py
+            # This creates a more reliable Greek key/meander pattern
+            step_size = trace_width * 3.0  # Spacing between meander lines
+            segment_length = max_x * 0.9  # Use most of available width
+
+            logger.debug(f"Generating {side_name} meander: start=({current_x:.3f},{current_y:.3f}), "
+                       f"bounds=({max_x:.3f},{max_y:.3f}), target={target_length:.2f}\"")
+
+            # Generate meander pattern with proper alternation
+            meander_pass = 0
+            horizontal_direction = 1  # Start going right
+
+            while current_length < target_length and abs(current_y) < max_y:
+                # Horizontal segment
+                segment_end_x = current_x + horizontal_direction * segment_length
+                segment_length_actual = abs(segment_end_x - current_x)
+
+                if segment_length_actual > 0.005:
+                    geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 {segment_end_x:.4f} {current_y:.4f} 0 {trace_width:.4f}")
+                    gw_tag += 1
+                    current_length += segment_length_actual
+
+                current_x = segment_end_x
+
+                # Vertical segment (move to next meander line)
+                if current_length < target_length:
+                    if direction == 'up':
+                        segment_end_y = current_y + step_size
+                    else:
+                        segment_end_y = current_y - step_size
+
+                    segment_length_vertical = abs(segment_end_y - current_y)
+
+                    if segment_length_vertical > 0.005:
+                        geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 {current_x:.4f} {segment_end_y:.4f} 0 {trace_width:.4f}")
+                        gw_tag += 1
+                        current_length += segment_length_vertical
+
+                    current_y = segment_end_y
+                    horizontal_direction *= -1  # Reverse direction for next horizontal segment
+
+                meander_pass += 1
+
+                # Safety check
+                if meander_pass > 20:
+                    logger.warning(f"Meander pass limit reached for {side_name} side")
+                    break
+
+            logger.debug(f"{side_name.capitalize()} meander: {len(geometry)} segments, {current_length:.2f}\" length, {meander_pass} passes")
+
+            return geometry, gw_tag
+
+        except Exception as e:
+            logger.error(f"Meander arm generation failed for {side_name}: {str(e)}")
+            return [], start_tag
     
     def calculate_electrical_metrics(self, params: Dict[str, Any], frequency_hz: float) -> Dict[str, Any]:
         """Calculate electrical metrics for the meander trace.

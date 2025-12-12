@@ -2,6 +2,10 @@
 from typing import Dict, List, Optional
 import os
 import math
+import platform
+import subprocess
+import webbrowser
+from datetime import datetime
 from pathlib import Path
 from loguru import logger
 import ezdxf
@@ -31,6 +35,21 @@ class VectorExporter:
         self.etch_clearance = 0.010  # Clearance around traces for etching
 
         logger.info(f"Vector exporter initialized with output dir: {output_dir}")
+
+    def generate_timestamp_filename(self, base_filename: str, frequency: str = "unknown") -> str:
+        """Generate timestamp-based filename to prevent duplicates.
+
+        Args:
+            base_filename: Base filename without extension
+            frequency: Frequency band for the filename
+
+        Returns:
+            str: Timestamped filename with format: antenna_export_[YYYYMMDD]_[HHMMSS]_[frequency]
+        """
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Clean frequency string for filename
+        clean_freq = frequency.replace(".", "").replace("/", "_").replace(" ", "")
+        return f"antenna_export_{timestamp}_{clean_freq}_{base_filename}"
 
     def export_geometry(self, geometry: str, filename: str, format_type: str = 'svg',
                        metadata: Optional[Dict] = None) -> str:
@@ -500,6 +519,47 @@ class VectorExporter:
 
         except Exception as e:
             logger.warning(f"Failed to add dimensions to PDF: {str(e)}")
+
+    def open_exports_folder(self) -> bool:
+        """Open the exports folder in the system's file explorer.
+
+        Returns:
+            bool: True if folder was opened successfully, False otherwise
+        """
+        try:
+            if not self.output_dir.exists():
+                logger.warning(f"Output directory does not exist: {self.output_dir}")
+                return False
+
+            logger.info(f"Opening exports folder: {self.output_dir}")
+
+            # Use platform-specific method to open the folder
+            if platform.system() == "Windows":
+                # Windows: use explorer command
+                os.startfile(str(self.output_dir))
+            elif platform.system() == "Darwin":
+                # macOS: use open command
+                subprocess.run(["open", str(self.output_dir)])
+            elif platform.system() == "Linux":
+                # Linux: try different file managers
+                try:
+                    subprocess.run(["xdg-open", str(self.output_dir)])
+                except Exception:
+                    # Fallback to nautilus if xdg-open fails
+                    try:
+                        subprocess.run(["nautilus", str(self.output_dir)])
+                    except Exception:
+                        logger.warning("No suitable file manager found for Linux")
+                        return False
+            else:
+                logger.warning(f"Unsupported platform: {platform.system()}")
+                return False
+
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to open exports folder: {str(e)}")
+            return False
 
 class EtchingValidator:
     """Validate exported designs for laser etching feasibility."""
