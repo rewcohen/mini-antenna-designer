@@ -34,6 +34,10 @@ class AntennaDesignerGUI:
         self.selected_band_key: Optional[str] = None
         self.processing_thread: Optional[threading.Thread] = None
 
+        # Substrate size variables (default to 4x2 inches)
+        self.substrate_width_var = StringVar(value="4.0")
+        self.substrate_height_var = StringVar(value="2.0")
+
         # Create GUI components
         self._create_menu()
         self._create_main_layout()
@@ -130,6 +134,18 @@ class AntennaDesignerGUI:
         ttk.Entry(custom_frame, textvariable=self.freq3_var, width=10).grid(row=0, column=5, padx=5, pady=2)
 
         ttk.Button(custom_frame, text="Use Custom", command=self._use_custom_frequencies).grid(row=0, column=6, padx=5, pady=2)
+
+        # Substrate size controls
+        substrate_frame = ttk.LabelFrame(parent, text="Substrate Size (inches)")
+        substrate_frame.pack(fill='x', padx=5, pady=5)
+
+        ttk.Label(substrate_frame, text="Width:").grid(row=0, column=0, padx=5, pady=2)
+        ttk.Entry(substrate_frame, textvariable=self.substrate_width_var, width=10).grid(row=0, column=1, padx=5, pady=2)
+
+        ttk.Label(substrate_frame, text="Height:").grid(row=0, column=2, padx=5, pady=2)
+        ttk.Entry(substrate_frame, textvariable=self.substrate_height_var, width=10).grid(row=0, column=3, padx=5, pady=2)
+
+        ttk.Button(substrate_frame, text="Update Substrate", command=self._update_substrate_size).grid(row=0, column=4, padx=5, pady=2)
 
         # Design generation controls
         opt_frame = ttk.LabelFrame(parent, text="Antenna Design Generation")
@@ -336,6 +352,31 @@ Notes:
             self._show_error("Invalid frequency values. Please enter numeric values.")
         except Exception as e:
             self._show_error(f"Error setting custom frequencies: {str(e)}")
+
+    def _update_substrate_size(self):
+        """Update the substrate size for design generation."""
+        try:
+            width = float(self.substrate_width_var.get())
+            height = float(self.substrate_height_var.get())
+
+            # Validate reasonable bounds
+            if width < 1.0 or width > 12.0:
+                self._show_error("Substrate width must be between 1.0 and 12.0 inches")
+                return
+            if height < 1.0 or height > 12.0:
+                self._show_error("Substrate height must be between 1.0 and 12.0 inches")
+                return
+
+            # Update the generator with new substrate dimensions
+            self.generator = AntennaDesignGenerator(self.nec, width, height)
+
+            self._log_message(f"Updated substrate size to {width}\" × {height}\"")
+            self.status_var.set(f"Substrate: {width}\" × {height}\"")
+
+        except ValueError as e:
+            self._show_error("Invalid substrate dimensions. Please enter numeric values.")
+        except Exception as e:
+            self._show_error(f"Error updating substrate size: {str(e)}")
 
     def _generate_design(self):
         """Generate antenna design for selected band."""
@@ -604,7 +645,9 @@ Warnings:
             metadata = {
                 'design_date': time.strftime('%Y-%m-%d %H:%M:%S'),
                 'frequencies': str(self.current_results.get('frequencies', [])) if self.current_results else 'Unknown',
-                'fitness_score': ".3f" if self.current_results else 'N/A'
+                'fitness_score': ".3f" if self.current_results else 'N/A',
+                'substrate_width': float(self.substrate_width_var.get()),
+                'substrate_height': float(self.substrate_height_var.get())
             }
 
             output_path = self.exporter.export_geometry(

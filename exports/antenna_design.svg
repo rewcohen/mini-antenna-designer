@@ -123,11 +123,11 @@
   <!-- Professional annotations -->
   <text x="20" y="30" class="title-text">LOG-PERIODIC TV ANTENNA</text>
   <text x="20" y="90" class="label-text">DIMENSIONS:</text>
-  <text x="20" y="105" class="dimension-text">Width: 1.710 inches (1710 mils)</text>
-  <text x="20" y="120" class="dimension-text">Height: 1.512 inches (1512 mils)</text>
+  <text x="20" y="105" class="dimension-text">Design Width: 1.710 inches (1710 mils)</text>
+  <text x="20" y="120" class="dimension-text">Design Height: 1.512 inches (1512 mils)</text>
   <text x="20" y="150" class="label-text">MANUFACTURING:</text>
   <text x="20" y="165" class="dimension-text">Trace Width: 10-20 mil (laser etching)</text>
-  <text x="20" y="180" class="dimension-text">Substrate: 4.0" x 2.0" FR-4 PCB</text>
+  <text x="20" y="180" class="dimension-text">Substrate: 4.0" x 4.0" FR-4 PCB</text>
   <text x="20" y="195" class="dimension-text">Scale: 1:1 (ready for production)</text>
   <line x1="-65.5" y1="201.2" x2="105.5" y2="201.2" class="dimension-line"/>
   <line x1="-65.5" y1="196.2" x2="-65.5" y2="206.2" class="dimension-line"/>

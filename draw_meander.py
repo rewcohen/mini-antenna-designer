@@ -192,13 +192,13 @@ def generate_simple_svg(segments: List[Tuple[float, float, float, float]],
   </g>
 
   <!-- Info text -->
-  <text x="10" y="20" font-family="Arial" font-size="12" fill="black">
+  <text x="10" y="20" font-family="Arial" font-size="8" fill="black">
     Bounds: {max_x - min_x:.3f}" x {max_y - min_y:.3f}"
   </text>
-  <text x="10" y="35" font-family="Arial" font-size="12" fill="black">
+  <text x="10" y="35" font-family="Arial" font-size="8" fill="black">
     Segments: {len(segments)}
   </text>
-  <text x="10" y="50" font-family="Arial" font-size="12" fill="black">
+  <text x="10" y="50" font-family="Arial" font-size="8" fill="black">
     Total length: {calculate_total_length(segments):.3f}"
   </text>
 

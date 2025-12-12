@@ -78,7 +78,7 @@ class SubstrateConstraints:
 
                 validation['max_extent'] = {'x': max_x, 'y': max_y}
 
-                # Check bounds
+                # Check bounds - coordinates go from -width/2 to +width/2 around origin (0,0)
                 if max_x > self.width / 2:
                     validation['within_bounds'] = False
                     validation['violations'].append(f"X extent {max_x:.3f} exceeds substrate width {self.width/2:.3f}")

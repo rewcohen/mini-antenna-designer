@@ -11,12 +11,14 @@ from presets import FrequencyBand, BandAnalysis
 class AntennaDesignGenerator:
     """Generate antenna designs directly based on frequency requirements."""
 
-    def __init__(self, nec_interface: NEC2Interface):
-        """Initialize design generator."""
+    def __init__(self, nec_interface: NEC2Interface, substrate_width: float = 4.0, substrate_height: float = 2.0):
+        """Initialize design generator with substrate dimensions."""
         self.nec = nec_interface
-        self.designer = AntennaDesign()
-        self.advanced_meander = AdvancedMeanderTrace()
-        logger.info("Antenna design generator initialized with advanced meander capability")
+        self.substrate_width = substrate_width
+        self.substrate_height = substrate_height
+        self.designer = AntennaDesign(substrate_width=substrate_width, substrate_height=substrate_height)
+        self.advanced_meander = AdvancedMeanderTrace(substrate_width=substrate_width, substrate_height=substrate_height)
+        logger.info(f"Antenna design generator initialized with advanced meander capability for {substrate_width}x{substrate_height} inch substrate")
 
     def generate_design(self, frequency_band: FrequencyBand) -> Dict:
         """Generate antenna design for given frequency band.
@@ -244,8 +246,8 @@ class AntennaDesignGenerator:
         from design import GeometryValidation
         from export import EtchingValidator
 
-        # Substrate bounds check
-        substrate_check = GeometryValidation.check_bounds(geometry)
+        # Substrate bounds check - use dynamic substrate dimensions
+        substrate_check = GeometryValidation.check_bounds(geometry, self.substrate_width, self.substrate_height)
 
         # Manufacturing check
         manufacturing_check = EtchingValidator.validate_for_etching(geometry)

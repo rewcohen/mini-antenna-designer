@@ -351,38 +351,48 @@ class VectorExporter:
             logger.error(f"SVG content generation error: {str(e)}")
             return self._get_empty_svg()
 
-    def _generate_svg_annotations(self, wire_segments: List[tuple], transform_func, 
+    def _generate_svg_annotations(self, wire_segments: List[tuple], transform_func,
                                total_width: float, total_height: float, metadata: Optional[Dict] = None) -> str:
         """Generate professional SVG annotations including dimensions and labels."""
         try:
             annotations = []
-            
+
             # Title and information
             title_x = 20
             title_y = 30
             annotations.append(f'<text x="{title_x}" y="{title_y}" class="title-text">LOG-PERIODIC TV ANTENNA</text>')
-            
+
             # Frequency information
+            band_name = "Unknown"
             if metadata and 'band_name' in metadata:
+                band_name = metadata["band_name"]
                 freq_y = title_y + 20
                 annotations.append(f'<text x="{title_x}" y="{freq_y}" class="subtitle-text">Band: {metadata["band_name"]}</text>')
-            
+
             if metadata and 'freq1_mhz' in metadata:
-                freq_y += 15
+                freq_y = (title_y + 20) if 'band_name' not in metadata else freq_y + 15
                 freq_range = f"{metadata['freq1_mhz']:.0f}-{metadata.get('freq3_mhz', metadata['freq1_mhz']):.0f} MHz"
                 annotations.append(f'<text x="{title_x}" y="{freq_y}" class="subtitle-text">Frequency: {freq_range}</text>')
-            
+
             # Overall dimensions
             dim_y = title_y + 60
             annotations.append(f'<text x="{title_x}" y="{dim_y}" class="label-text">DIMENSIONS:</text>')
-            annotations.append(f'<text x="{title_x}" y="{dim_y + 15}" class="dimension-text">Width: {total_width:.3f} inches ({total_width*1000:.0f} mils)</text>')
-            annotations.append(f'<text x="{title_x}" y="{dim_y + 30}" class="dimension-text">Height: {total_height:.3f} inches ({total_height*1000:.0f} mils)</text>')
-            
+            annotations.append(f'<text x="{title_x}" y="{dim_y + 15}" class="dimension-text">Design Width: {total_width:.3f} inches ({total_width*1000:.0f} mils)</text>')
+            annotations.append(f'<text x="{title_x}" y="{dim_y + 30}" class="dimension-text">Design Height: {total_height:.3f} inches ({total_height*1000:.0f} mils)</text>')
+
             # Manufacturing information
             manuf_y = dim_y + 60
             annotations.append(f'<text x="{title_x}" y="{manuf_y}" class="label-text">MANUFACTURING:</text>')
             annotations.append(f'<text x="{title_x}" y="{manuf_y + 15}" class="dimension-text">Trace Width: 10-20 mil (laser etching)</text>')
-            annotations.append(f'<text x="{title_x}" y="{manuf_y + 30}" class="dimension-text">Substrate: 4.0" x 2.0" FR-4 PCB</text>')
+
+            # Use configured substrate size from metadata, fallback to calculated size
+            substrate_width = total_width
+            substrate_height = total_height
+            if metadata and 'substrate_width' in metadata and 'substrate_height' in metadata:
+                substrate_width = metadata['substrate_width']
+                substrate_height = metadata['substrate_height']
+
+            annotations.append(f'<text x="{title_x}" y="{manuf_y + 30}" class="dimension-text">Substrate: {substrate_width:.1f}" x {substrate_height:.1f}" FR-4 PCB</text>')
             annotations.append(f'<text x="{title_x}" y="{manuf_y + 45}" class="dimension-text">Scale: 1:1 (ready for production)</text>')
             
             # Dimension lines
