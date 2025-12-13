@@ -4,10 +4,12 @@ from tkinter import ttk, messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
 import threading
 import time
+import random
 from typing import Optional, Dict, Any
 import base64
 from io import BytesIO
 import os
+import string
 try:
     from PIL import Image, ImageTk
     from svglib.svglib import svg2rlg
@@ -18,7 +20,7 @@ except ImportError as e:
     logger.warning(f"PIL libraries not available for SVG rendering: {str(e)}")
 from loguru import logger
 
-from core import NEC2Interface, NEC2Error, AntennaMetrics
+from core import NEC2Interface, NEC2Error, AntennaMetrics, validate_system_configuration
 from design import AntennaDesign, AntennaGeometryError
 from design_generator import AntennaDesignGenerator
 from export import VectorExporter, ExportError
@@ -64,6 +66,9 @@ class AntennaDesignerGUI:
         self.chart_original_image = None
         self.chart_current_photo = None
 
+        # Designs tab zoom variables
+        self.designs_zoom_level = 1.0
+
         # Create GUI components
         self._create_menu()
         self._create_main_layout()
@@ -74,7 +79,36 @@ class AntennaDesignerGUI:
         status_bar = ttk.Label(root, textvariable=self.status_var, relief=SUNKEN, anchor=W)
         status_bar.pack(side=BOTTOM, fill=X)
 
+        # Setup global error handling
+        self._setup_global_error_handling()
+
+        # Validate system configuration
+        try:
+            config_status = validate_system_configuration()
+            if not config_status['valid']:
+                logger.warning("Configuration issues detected")
+                # Defer showing error until mainloop starts to avoid blocking init
+                self.root.after(100, lambda: self._show_error("System Configuration Issues:\n" + "\n".join(config_status['checks'])))
+            else:
+                logger.info("System configuration validated: " + ", ".join(config_status['checks']))
+        except Exception as e:
+            logger.error(f"Configuration validation failed: {str(e)}")
+
         logger.info("GUI initialized")
+
+    def _setup_global_error_handling(self):
+        """Setup global error handling for Tkinter."""
+        def handle_exception(exc_type, exc_value, exc_traceback):
+            error_msg = f"{exc_type.__name__}: {str(exc_value)}"
+            logger.critical(f"Uncaught exception: {error_msg}")
+            import traceback
+            trace_details = "".join(traceback.format_tb(exc_traceback))
+            logger.debug(f"Traceback:\n{trace_details}")
+            
+            # Show error dialog
+            self._show_error(f"An unexpected error occurred:\n{error_msg}")
+            
+        self.root.report_callback_exception = handle_exception
 
     def _create_menu(self):
         """Create application menu."""
@@ -347,7 +381,12 @@ This chart helps you understand how the antenna design system enables compact, h
         export_frame = ttk.LabelFrame(parent, text="Export Options")
         export_frame.pack(fill='x', padx=5, pady=5)
 
-        self.export_filename_var = StringVar(value="antenna_design")
+        # Generate automatic filename with today's date and random suffix
+        from datetime import datetime
+        today_date = datetime.now().strftime("%Y%m%d")
+        random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+        default_filename = f"antenna_{today_date}_{random_suffix}"
+        self.export_filename_var = StringVar(value=default_filename)
         ttk.Label(export_frame, text="Filename:").grid(row=0, column=0, padx=5, pady=2)
         ttk.Entry(export_frame, textvariable=self.export_filename_var).grid(row=0, column=1, padx=5, pady=2, sticky='ew')
 
@@ -1220,6 +1259,14 @@ Supported Antenna Types:
         preview_frame = ttk.LabelFrame(right_panel, text="Preview")
         preview_frame.pack(fill='both', expand=True)
 
+        # Zoom controls for preview
+        zoom_controls_frame = ttk.Frame(preview_frame)
+        zoom_controls_frame.pack(fill='x', padx=5, pady=2)
+
+        ttk.Button(zoom_controls_frame, text="Zoom In +", command=self._designs_zoom_in).pack(side=LEFT, padx=2)
+        ttk.Button(zoom_controls_frame, text="Zoom Out -", command=self._designs_zoom_out).pack(side=LEFT, padx=2)
+        ttk.Button(zoom_controls_frame, text="Fit to View", command=self._designs_fit_to_view).pack(side=LEFT, padx=2)
+
         # Thumbnail preview (placeholder for SVG)
         self.thumbnail_label = ttk.Label(preview_frame, text="Select a design to view thumbnail", background='lightgray')
         self.thumbnail_label.pack(fill='both', expand=True, padx=5, pady=5)
@@ -1257,52 +1304,76 @@ Supported Antenna Types:
                 self._show_error("No design results available.")
                 return
 
-            # Prompt for design name
-            name_dialog = Toplevel(self.root)
-            name_dialog.title("Save Design")
-            name_dialog.geometry("400x150")
-            name_dialog.resizable(False, False)
-            name_dialog.transient(self.root)
-            name_dialog.grab_set()
+            # Create automatic filename suggestion
+            from datetime import datetime
+            today_date = datetime.now().strftime("%Y%m%d")
+            random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+            default_filename = f"antenna_{today_date}_{random_suffix}"
 
-            ttk.Label(name_dialog, text="Design Name:").pack(pady=(10, 0))
-            name_var = StringVar()
-            name_entry = ttk.Entry(name_dialog, textvariable=name_var, width=40)
+            # Prompt for design name and filename
+            save_dialog = Toplevel(self.root)
+            save_dialog.title("Save Design")
+            save_dialog.geometry("450x200")
+            save_dialog.resizable(False, False)
+            save_dialog.transient(self.root)
+            save_dialog.grab_set()
+
+            ttk.Label(save_dialog, text="Design Name:").pack(pady=(10, 0))
+
+            # Generate automatic design name with today's date
+            from datetime import datetime
+            today_date = datetime.now().strftime("%Y%m%d")
+            default_design_name = f"Design - {today_date}"
+
+            name_var = StringVar(value=default_design_name)
+            name_entry = ttk.Entry(save_dialog, textvariable=name_var, width=40)
             name_entry.pack(pady=5, padx=10)
+
+            ttk.Label(save_dialog, text="Filename (optional):").pack(pady=(10, 0))
+            filename_var = StringVar(value=default_filename)
+            filename_entry = ttk.Entry(save_dialog, textvariable=filename_var, width=40)
+            filename_entry.pack(pady=5, padx=10)
+            ttk.Label(save_dialog, text="(leave blank to auto-generate)", font=('Arial', 8)).pack()
 
             def save_and_close():
                 name = name_var.get().strip()
-                if name:
-                    try:
-                        # Create metadata
-                        metadata = DesignMetadata(
-                            name=name,
-                            substrate_width=float(self.substrate_width_var.get()),
-                            substrate_height=float(self.substrate_height_var.get()),
-                            trace_width_mil=float(self.trace_width_var.get())
-                        )
-
-                        # Save design
-                        saved_path = self.design_storage.save_design(
-                            self.current_geometry, metadata, self.current_results
-                        )
-
-                        self._log_message(f"Design saved: {name}")
-                        self.status_var.set(f"Saved design: {name}")
-                        self._refresh_designs_list()
-                        name_dialog.destroy()
-
-                    except Exception as e:
-                        self._show_error(f"Failed to save design: {str(e)}")
-                else:
+                filename = filename_var.get().strip()
+                if not name:
                     messagebox.showerror("Error", "Please enter a design name.")
+                    return
 
-            ttk.Button(name_dialog, text="Save", command=save_and_close).pack(pady=(0, 10))
+                if not filename.strip():
+                    # Use the default filename pattern if left blank
+                    filename = default_filename
+
+                try:
+                    # Create metadata with custom filename
+                    metadata = DesignMetadata(
+                        name=name,
+                        substrate_width=float(self.substrate_width_var.get()),
+                        substrate_height=float(self.substrate_height_var.get()),
+                        trace_width_mil=float(self.trace_width_var.get())
+                    )
+
+                    # Save design
+                    saved_path = self.design_storage.save_design(
+                        self.current_geometry, metadata, self.current_results
+                    )
+
+                    self._log_message(f"Design saved: {name} (filename: {filename})")
+                    self.status_var.set(f"Saved design: {name}")
+                    self._refresh_designs_list()
+                    save_dialog.destroy()
+
+                except Exception as e:
+                    self._show_error(f"Failed to save design: {str(e)}")
+
+            ttk.Button(save_dialog, text="Save", command=save_and_close).pack(pady=(10, 10))
             name_entry.focus()
 
-            # Bind Enter key
-            name_entry.bind('<Return>', lambda e: save_and_close())
-            name_dialog.bind('<Escape>', lambda e: name_dialog.destroy())
+            # Bind Enter key to save
+            save_dialog.bind('<Return>', lambda e: save_and_close())
+            save_dialog.bind('<Escape>', lambda e: save_dialog.destroy())
 
         except Exception as e:
             self._show_error(f"Error saving design: {str(e)}")
@@ -1445,9 +1516,20 @@ Supported Antenna Types:
             # Load PIL Image and resize if needed
             pil_image = Image.open(png_buffer)
 
-            # Limit thumbnail size
-            max_size = (200, 150)  # Max width x height
-            pil_image.thumbnail(max_size, Image.LANCZOS)
+            # Apply zoom level to the thumbnail
+            width, height = pil_image.size
+            zoom_width = int(width * self.designs_zoom_level)
+            zoom_height = int(height * self.designs_zoom_level)
+
+            # Limit maximum thumbnail size to prevent excessive scaling
+            if zoom_width > 400:  # Max zoomed width
+                zoom_width = 400
+            if zoom_height > 300:  # Max zoomed height
+                zoom_height = 300
+
+            # Resize if different from current size
+            if zoom_width != width or zoom_height != height:
+                pil_image = pil_image.resize((zoom_width, zoom_height), Image.LANCZOS)
 
             # Convert to tkinter PhotoImage
             photo_image = ImageTk.PhotoImage(pil_image)
@@ -1633,8 +1715,12 @@ Performance Metrics:
                 self.current_geometry = geometry
                 self.current_results = metadata.performance_metrics
 
-                # Use existing export functionality
-                self.export_filename_var.set(metadata.name or "exported_design")
+                # Generate automatic filename with today's date and random suffix (same as export tab)
+                from datetime import datetime
+                today_date = datetime.now().strftime("%Y%m%d")
+                random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+                default_filename = f"antenna_{today_date}_{random_suffix}"
+                self.export_filename_var.set(default_filename)
 
                 # Switch to export tab (would need notebook access)
                 # For now, just export to default format
@@ -2153,6 +2239,28 @@ Click OK to continue with an empty design library.
             self._log_message("Switched to detailed band analysis mode")
         else:
             self._log_message("Switched to comparison band analysis mode")
+
+    def _designs_zoom_in(self):
+        """Zoom in on the design thumbnail."""
+        if self.designs_zoom_level < 5.0:  # Maximum zoom 500%
+            self.designs_zoom_level *= 1.2
+            self._update_design_thumbnail_display()
+
+    def _designs_zoom_out(self):
+        """Zoom out on the design thumbnail."""
+        if self.designs_zoom_level > 0.2:  # Minimum zoom 20%
+            self.designs_zoom_level /= 1.2
+            self._update_design_thumbnail_display()
+
+    def _designs_fit_to_view(self):
+        """Fit the design thumbnail to view by resetting zoom."""
+        self.designs_zoom_level = 1.0
+        self._update_design_thumbnail_display()
+
+    def _update_design_thumbnail_display(self):
+        """Update the design thumbnail display with current zoom level."""
+        # Re-trigger the design selection to refresh the thumbnail with new zoom
+        self._on_design_selected(None)
 
 
 def test_storage():

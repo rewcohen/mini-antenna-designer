@@ -759,8 +759,92 @@ class EtchingValidator:
             if min_radius < 0.005:  # 5 mil minimum for good quality
                 validation['warnings'].append("Trace width below recommended minimum (5 mil)")
 
+            # Check dimensions
+            dims = EtchingValidator._calculate_dimensions(segments)
+            if dims['width'] < 0.1 or dims['height'] < 0.01:
+                validation['warnings'].append("Antenna dimensions suspiciously small")
+                validation['etching_ready'] = False
+            
+            # Check connectivity
+            connectivity = EtchingValidator._check_connectivity(segments)
+            validation['component_count'] = connectivity['components']
+            if connectivity['components'] > 5 and wire_count > 10:
+                # Allow some disconnected elements (parasitic) but warn if too many fragmented parts
+                validation['warnings'].append(f"High fragmentation detected: {connectivity['components']} disconnected parts")
+            
+            if connectivity['isolated_segments'] > 0:
+                validation['warnings'].append(f"Found {connectivity['isolated_segments']} isolated single-segment wires")
+
         except Exception as e:
             validation['warnings'].append(f"Validation error: {str(e)}")
             validation['etching_ready'] = False
 
         return validation
+
+    @staticmethod
+    def _calculate_dimensions(segments):
+        """Calculate total width and height of geometry."""
+        if not segments:
+            return {'width': 0, 'height': 0}
+            
+        x_coords = []
+        y_coords = []
+        for x1, y1, x2, y2, _ in segments:
+            x_coords.extend([x1, x2])
+            y_coords.extend([y1, y2])
+            
+        return {
+            'width': max(x_coords) - min(x_coords),
+            'height': max(y_coords) - min(y_coords)
+        }
+
+    @staticmethod
+    def _check_connectivity(segments):
+        """Analyze connectivity of wire segments."""
+        if not segments:
+            return {'components': 0, 'isolated_segments': 0}
+            
+        # Build adjacency graph
+        adj = {}
+        
+        def add_node(pt):
+            # Round coordinates to avoid float precision issues
+            key = (round(pt[0], 4), round(pt[1], 4))
+            if key not in adj: adj[key] = []
+            return key
+
+        for x1, y1, x2, y2, _ in segments:
+            p1 = add_node((x1, y1))
+            p2 = add_node((x2, y2))
+            adj[p1].append(p2)
+            adj[p2].append(p1)
+            
+        # Count connected components
+        visited = set()
+        components = 0
+        isolated_count = 0
+        
+        for node in adj:
+            if node not in visited:
+                components += 1
+                # BFS to find component size
+                component_nodes = 0
+                queue = [node]
+                visited.add(node)
+                while queue:
+                    curr = queue.pop(0)
+                    component_nodes += 1
+                    for neighbor in adj[curr]:
+                        if neighbor not in visited:
+                            visited.add(neighbor)
+                            queue.append(neighbor)
+                
+                # Check if isolated (2 nodes connected to each other only, i.e. 1 segment)
+                # Actually, a single segment has 2 nodes. Component size 2 = 1 segment.
+                if component_nodes <= 2:
+                    isolated_count += 1
+                    
+        return {
+            'components': components,
+            'isolated_segments': isolated_count
+        }

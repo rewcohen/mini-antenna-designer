@@ -137,8 +137,7 @@ def run_system_tests():
     # Test 5: Design Storage
     try:
         logger.info("Test 5: Testing design storage...")
-        from storage import DesignStorage
-        from presets import DesignMetadata
+        from storage import DesignStorage, DesignMetadata
 
         # Test storage initialization
         storage = DesignStorage()

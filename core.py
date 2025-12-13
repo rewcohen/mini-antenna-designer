@@ -6,6 +6,27 @@ import numpy as np
 from loguru import logger
 import os
 import time
+import functools
+
+class PerformanceMonitor:
+    """Monitor execution time and resources."""
+    
+    @staticmethod
+    def measure_time(func):
+        """Decorator to measure execution time."""
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            start_time = time.time()
+            try:
+                result = func(*args, **kwargs)
+                duration = time.time() - start_time
+                logger.info(f"Performance: {func.__name__} took {duration:.4f}s")
+                return result
+            except Exception as e:
+                duration = time.time() - start_time
+                logger.error(f"Performance: {func.__name__} failed after {duration:.4f}s: {str(e)}")
+                raise
+        return wrapper
 
 def _rotate_logs_on_startup():
     """Rotate logs on application startup with robust error handling."""
@@ -38,6 +59,36 @@ _rotate_logs_on_startup()  # Rotate logs at startup
 
 logger.add("antenna_designer.log", rotation="10 MB", retention="7 days", level="INFO")
 logger.add(lambda msg: print(msg, end=""), level="INFO")  # Console output
+
+def validate_system_configuration() -> dict:
+    """Validate overall system configuration and dependencies."""
+    status = {'valid': True, 'checks': []}
+    
+    # Check 1: Directories
+    for d in ['temp', 'exports', 'designs']:
+        p = Path(d)
+        if not p.exists():
+            try:
+                p.mkdir(exist_ok=True)
+                status['checks'].append(f"✓ Created {d} directory")
+            except Exception as e:
+                status['valid'] = False
+                status['checks'].append(f"✗ Failed to create {d}: {e}")
+        elif not os.access(p, os.W_OK):
+            status['valid'] = False
+            status['checks'].append(f"✗ {d} directory is not writable")
+        else:
+            status['checks'].append(f"✓ {d} directory is ready")
+
+    # Check 2: dependencies (log only)
+    try:
+        import numpy
+        status['checks'].append(f"✓ numpy {numpy.__version__} available")
+    except ImportError:
+        status['valid'] = False
+        status['checks'].append("✗ numpy package missing")
+
+    return status
 
 class NEC2Error(Exception):
     """Custom exception for NEC2-related errors."""
@@ -81,6 +132,7 @@ class NEC2Interface:
 
         raise NEC2Error("NEC2 executable not found. Please specify nec2_path or install NEC2.")
 
+    @PerformanceMonitor.measure_time
     def run_simulation(self, nec_input: str, frequencies: List[float]) -> dict:
         """Run NEC2 simulation for given antenna geometry and frequencies.
 
