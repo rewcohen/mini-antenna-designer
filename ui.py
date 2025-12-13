@@ -5,6 +5,16 @@ from tkinter.scrolledtext import ScrolledText
 import threading
 import time
 from typing import Optional, Dict, Any
+import base64
+from io import BytesIO
+try:
+    from PIL import Image, ImageTk
+    from svglib.svglib import svg2rlg
+    from reportlab.graphics import renderPM
+    PIL_AVAILABLE = True
+except ImportError as e:
+    PIL_AVAILABLE = False
+    logger.warning(f"PIL libraries not available for SVG rendering: {str(e)}")
 from loguru import logger
 
 from core import NEC2Interface, NEC2Error, AntennaMetrics
@@ -12,6 +22,7 @@ from design import AntennaDesign, AntennaGeometryError
 from design_generator import AntennaDesignGenerator
 from export import VectorExporter, ExportError
 from presets import BandPresets, BandType, FrequencyBand
+from storage import DesignStorage, DesignMetadata
 
 class AntennaDesignerGUI:
     """Main GUI application for antenna design."""
@@ -27,16 +38,22 @@ class AntennaDesignerGUI:
         self.nec = NEC2Interface()
         self.generator = AntennaDesignGenerator(self.nec)
         self.exporter = VectorExporter()
+        self.design_storage = DesignStorage()
 
         # State variables
         self.current_geometry: Optional[str] = None
         self.current_results: Optional[Dict] = None
         self.selected_band_key: Optional[str] = None
         self.processing_thread: Optional[threading.Thread] = None
+        self.current_thumbnail: Optional[ImageTk.PhotoImage] = None
 
         # Substrate size variables (default to 4x2 inches)
         self.substrate_width_var = StringVar(value="4.0")
         self.substrate_height_var = StringVar(value="2.0")
+
+        # Trace width variables (default to 10 mil, minimum 5 mil)
+        self.trace_width_var = DoubleVar(value=10.0)
+        self.trace_width_label_var = StringVar(value="10.0 mil - Good")
 
         # Create GUI components
         self._create_menu()
@@ -59,6 +76,7 @@ class AntennaDesignerGUI:
         file_menu.add_command(label="New Design", command=self._new_design)
         file_menu.add_command(label="Load Geometry", command=self._load_geometry)
         file_menu.add_command(label="Save Geometry", command=self._save_geometry)
+        file_menu.add_command(label="Save Design to Library", command=self._save_current_design)
         file_menu.add_separator()
         file_menu.add_command(label="Export SVG", command=lambda: self._export_geometry('svg'))
         file_menu.add_command(label="Export DXF", command=lambda: self._export_geometry('dxf'))
@@ -101,6 +119,11 @@ class AntennaDesignerGUI:
         export_frame = ttk.Frame(notebook)
         notebook.add(export_frame, text='Export')
         self._create_export_tab(export_frame)
+
+        # My Designs tab
+        designs_frame = ttk.Frame(notebook)
+        notebook.add(designs_frame, text='My Designs')
+        self._create_designs_tab(designs_frame)
 
     def _create_design_tab(self, parent):
         """Create the antenna design tab."""
@@ -146,6 +169,27 @@ class AntennaDesignerGUI:
         ttk.Entry(substrate_frame, textvariable=self.substrate_height_var, width=10).grid(row=0, column=3, padx=5, pady=2)
 
         ttk.Button(substrate_frame, text="Update Substrate", command=self._update_substrate_size).grid(row=0, column=4, padx=5, pady=2)
+
+        # Trace width controls
+        trace_frame = ttk.LabelFrame(parent, text="Trace Width (mil)")
+        trace_frame.pack(fill='x', padx=5, pady=5)
+
+        ttk.Label(trace_frame, text="Width:").grid(row=0, column=0, padx=5, pady=2)
+        self.trace_width_slider = ttk.Scale(trace_frame, from_=5, to=100, orient='horizontal',
+                                          variable=self.trace_width_var, command=self._on_trace_width_changed)
+        self.trace_width_slider.grid(row=0, column=1, padx=5, pady=2, sticky='ew')
+
+        self.trace_width_entry = ttk.Entry(trace_frame, textvariable=self.trace_width_var, width=8)
+        self.trace_width_entry.grid(row=0, column=2, padx=5, pady=2)
+        self.trace_width_entry.bind('<FocusOut>', lambda e: self._validate_trace_width())
+        self.trace_width_entry.bind('<Return>', lambda e: self._validate_trace_width())
+
+        self.trace_width_status_label = ttk.Label(trace_frame, textvariable=self.trace_width_label_var,
+                                                foreground='green')
+        self.trace_width_status_label.grid(row=0, column=3, padx=5, pady=2, sticky='w')
+
+        # Configure grid weights for trace frame
+        trace_frame.columnconfigure(1, weight=1)
 
         # Design generation controls
         opt_frame = ttk.LabelFrame(parent, text="Antenna Design Generation")
@@ -414,10 +458,21 @@ Notes:
             self.progress_var.set(10)
             self.status_var.set("Generating design...")
 
+            # Convert trace width from mil to inches for the design generator
+            trace_width_mil = self.trace_width_var.get()
+            trace_width_inches = trace_width_mil / 1000.0  # Convert mil to inches
+
+            # Get current substrate dimensions
+            substrate_width = float(self.substrate_width_var.get())
+            substrate_height = float(self.substrate_height_var.get())
+
+            # Update generator with current substrate dimensions if needed
+            self.generator = AntennaDesignGenerator(self.nec, substrate_width, substrate_height)
+
             # Generate design in background thread
             self.processing_thread = threading.Thread(
                 target=self._run_design_generation,
-                args=(selected_band,)
+                args=(selected_band, trace_width_inches)
             )
             self.processing_thread.daemon = True
             self.processing_thread.start()
@@ -425,11 +480,11 @@ Notes:
         except Exception as e:
             self._show_error(f"Error starting design generation: {str(e)}")
 
-    def _run_design_generation(self, frequency_band):
+    def _run_design_generation(self, frequency_band, trace_width_inches):
         """Run design generation in background thread."""
         try:
             # Generate the design
-            results = self.generator.generate_design(frequency_band)
+            results = self.generator.generate_design(frequency_band, trace_width_inches)
 
             # Update UI on completion
             self.root.after(0, self._design_generation_complete, results)
@@ -460,12 +515,13 @@ Notes:
 
             # Always treat as successful unless there's an explicit error
             if not results.get('error'):
+                trace_info = f" ({results.get('trace_width_mil', 10):.1f} mil traces)" if results.get('trace_width_mil') is not None else ""
                 self.status_var.set("Design generation complete")
-                self._log_message(f"Design generated: {results.get('design_type', 'Unknown')} type - {results.get('band_name', 'Unknown')}")
+                self._log_message(f"Design generated: {results.get('design_type', 'Unknown')} type - {results.get('band_name', 'Unknown')}{trace_info}")
                 design_type = results.get('design_type', 'Unknown')
                 band_name = results.get('band_name', 'Unknown')
                 freqs = f"{results.get('freq1_mhz', 'N/A')}/{results.get('freq2_mhz', 'N/A')}/{results.get('freq3_mhz', 'N/A')} MHz"
-                self.status_var.set(f"Generated {design_type} for {band_name} ({freqs})")
+                self.status_var.set(f"Generated {design_type} for {band_name} ({freqs}){trace_info}")
             else:
                 self.status_var.set("Design generation failed")
                 error_msg = results.get('error', 'Unknown error')
@@ -862,8 +918,803 @@ Supported Antenna Types:
 """
         messagebox.showinfo("User Guide", help_msg)
 
+    def _on_trace_width_changed(self, value):
+        """Handle trace width slider changes."""
+        try:
+            width = float(value)
+            self._validate_trace_width_display(width)
+        except (ValueError, TypeError):
+            pass
+
+    def _validate_trace_width(self):
+        """Validate trace width entry and slider synchronization."""
+        try:
+            # Get value from entry
+            width = float(self.trace_width_entry.get())
+
+            # Clamp to valid range
+            if width < 5.0:
+                width = 5.0
+                self.trace_width_var.set(width)
+            elif width > 100.0:
+                width = 100.0
+                self.trace_width_var.set(width)
+
+            self._validate_trace_width_display(width)
+
+        except ValueError as e:
+            # Reset to current slider value
+            self.trace_width_entry.delete(0, END)
+            self.trace_width_entry.insert(0, f"{self.trace_width_var.get():.1f}")
+            self._validate_trace_width_display(self.trace_width_var.get())
+
+    def _validate_trace_width_display(self, width):
+        """Update trace width validation display."""
+        try:
+            from constraints import ManufacturingRules
+            result = ManufacturingRules.check_trace_width(width / 1000.0)  # Convert mil to inches
+
+            # Update label and color based on manufacturability
+            status_text = "Invalid"
+            color = 'red'
+
+            if result['is_manufacturable']:
+                if result['quality_rating'] == 'good':
+                    status_text = f"{width:.1f} mil - Good"
+                    color = 'green'
+                elif result['quality_rating'] == 'acceptable':
+                    status_text = f"{width:.1f} mil - Acceptable"
+                    color = 'orange'
+                else:
+                    status_text = f"{width:.1f} mil - Needs Review"
+                    color = 'red'
+            else:
+                status_text = f"{width:.1f} mil - Invalid"
+                color = 'red'
+
+            self.trace_width_label_var.set(status_text)
+            self.trace_width_status_label.config(foreground=color)
+
+        except Exception as e:
+            logger.error(f"Trace width validation error: {str(e)}")
+            self.trace_width_label_var.set("Error")
+            self.trace_width_status_label.config(foreground='red')
+
+    def _create_designs_tab(self, parent):
+        """Create the 'My Designs' tab for managing saved antenna designs."""
+        # Use existing design storage from initialization
+        # self.design_storage is already created in __init__
+
+        # Top toolbar
+        toolbar_frame = ttk.Frame(parent)
+        toolbar_frame.pack(fill='x', padx=5, pady=5)
+
+        # Save current design button
+        ttk.Button(toolbar_frame, text="Save Current Design",
+                  command=self._save_current_design).pack(side=LEFT, padx=2)
+
+        # Refresh button
+        ttk.Button(toolbar_frame, text="Refresh List",
+                  command=self._refresh_designs_list).pack(side=LEFT, padx=2)
+
+        # Delete button
+        ttk.Button(toolbar_frame, text="Delete Selected",
+                  command=self._delete_selected_design).pack(side=LEFT, padx=2)
+
+        # Search entry
+        search_frame = ttk.Frame(toolbar_frame)
+        search_frame.pack(side=RIGHT, padx=2)
+        ttk.Label(search_frame, text="Search:").pack(side=LEFT)
+        self.design_search_var = StringVar()
+        search_entry = ttk.Entry(search_frame, textvariable=self.design_search_var, width=20)
+        search_entry.pack(side=LEFT, padx=2)
+        search_entry.bind('<KeyRelease>', lambda e: self._search_designs())
+
+        # Main content area - use simple frames with fallback if paned window fails
+        try:
+            # Try to use paned window for resizable split
+            paned = ttk.PanedWindow(parent, orient='horizontal')
+            paned.pack(fill='both', expand=True, padx=5, pady=5)
+            logger.info("Successfully created paned window for designs tab")
+
+            # Left panel - designs list
+            left_panel = ttk.Frame(paned)
+            paned.add(left_panel, weight=2)
+
+            # Right panel - design details
+            right_panel = ttk.Frame(paned)
+            paned.add(right_panel, weight=3)
+
+        except Exception as e:
+            logger.warning(f"Failed to create paned window, using simple layout: {str(e)}")
+            # Fallback to simple frame layout without splitter
+            main_frame = ttk.Frame(parent)
+            main_frame.pack(fill='both', expand=True, padx=5, pady=5)
+
+            # Create panels with fixed sizes
+            left_panel = ttk.Frame(main_frame, width=400)
+            left_panel.pack(side=LEFT, fill='both', expand=True, padx=(0, 5))
+
+            ttk.Separator(main_frame, orient='vertical').pack(side=LEFT, fill='y')
+
+            right_panel = ttk.Frame(main_frame)
+            right_panel.pack(side=RIGHT, fill='both', expand=True)
+
+        # Designs list in left panel
+        list_frame = ttk.LabelFrame(left_panel, text="Saved Designs")
+        list_frame.pack(fill='both', expand=True)
+
+        # Create treeview for designs
+        columns = ('name', 'band', 'frequencies', 'created', 'type')
+        self.designs_tree = ttk.Treeview(list_frame, columns=columns, show='headings', height=15)
+
+        # Configure columns
+        self.designs_tree.heading('name', text='Design Name')
+        self.designs_tree.heading('band', text='Band')
+        self.designs_tree.heading('frequencies', text='Frequencies (MHz)')
+        self.designs_tree.heading('created', text='Created')
+        self.designs_tree.heading('type', text='Type')
+
+        self.designs_tree.column('name', width=200, minwidth=150)
+        self.designs_tree.column('band', width=120, minwidth=100)
+        self.designs_tree.column('frequencies', width=120, minwidth=100)
+        self.designs_tree.column('created', width=150, minwidth=120)
+        self.designs_tree.column('type', width=100, minwidth=80)
+
+        # Scrollbar for treeview
+        tree_scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=self.designs_tree.yview)
+        self.designs_tree.configure(yscrollcommand=tree_scrollbar.set)
+
+        self.designs_tree.pack(side=LEFT, fill='both', expand=True)
+        tree_scrollbar.pack(side=RIGHT, fill='y')
+
+        # Bind selection event
+        self.designs_tree.bind('<<TreeviewSelect>>', self._on_design_selected)
+
+        # Design details
+        details_frame = ttk.LabelFrame(right_panel, text="Design Details")
+        details_frame.pack(fill='x', pady=(0, 5))
+
+        self.details_text = ScrolledText(details_frame, height=8, wrap=WORD, font=('Courier', 9))
+        self.details_text.pack(fill='both', expand=True, padx=5, pady=5)
+
+        # Preview area
+        preview_frame = ttk.LabelFrame(right_panel, text="Preview")
+        preview_frame.pack(fill='both', expand=True)
+
+        # Thumbnail preview (placeholder for SVG)
+        self.thumbnail_label = ttk.Label(preview_frame, text="Select a design to view thumbnail", background='lightgray')
+        self.thumbnail_label.pack(fill='both', expand=True, padx=5, pady=5)
+
+        # Action buttons
+        action_frame = ttk.Frame(preview_frame)
+        action_frame.pack(fill='x', pady=(5, 0))
+
+        ttk.Button(action_frame, text="Load Design", command=self._load_selected_design).pack(side=LEFT, padx=2)
+        ttk.Button(action_frame, text="Export Design", command=self._export_selected_design).pack(side=LEFT, padx=2)
+        ttk.Button(action_frame, text="Edit Notes", command=self._edit_design_notes).pack(side=RIGHT, padx=2)
+
+        # Library stats
+        stats_frame = ttk.Frame(parent)
+        stats_frame.pack(fill='x', padx=5, pady=(0, 5))
+
+        self.library_stats_var = StringVar()
+        stats_label = ttk.Label(stats_frame, textvariable=self.library_stats_var,
+                               font=('Arial', 9, 'italic'))
+        stats_label.pack(side=RIGHT)
+
+        # Delay initial design loading to ensure UI is fully initialized
+        logger.info("GUI creation complete, scheduling design library initialization...")
+        # Use after() to delay design loading until mainloop starts
+        self.root.after(100, self._delayed_initial_refresh)
+
+    def _save_current_design(self):
+        """Save the currently generated design to the library."""
+        try:
+            if not self.current_geometry:
+                self._show_error("No design to save. Generate a design first.")
+                return
+
+            if not self.current_results:
+                self._show_error("No design results available.")
+                return
+
+            # Prompt for design name
+            name_dialog = Toplevel(self.root)
+            name_dialog.title("Save Design")
+            name_dialog.geometry("400x150")
+            name_dialog.resizable(False, False)
+            name_dialog.transient(self.root)
+            name_dialog.grab_set()
+
+            ttk.Label(name_dialog, text="Design Name:").pack(pady=(10, 0))
+            name_var = StringVar()
+            name_entry = ttk.Entry(name_dialog, textvariable=name_var, width=40)
+            name_entry.pack(pady=5, padx=10)
+
+            def save_and_close():
+                name = name_var.get().strip()
+                if name:
+                    try:
+                        # Create metadata
+                        metadata = DesignMetadata(
+                            name=name,
+                            substrate_width=float(self.substrate_width_var.get()),
+                            substrate_height=float(self.substrate_height_var.get()),
+                            trace_width_mil=float(self.trace_width_var.get())
+                        )
+
+                        # Save design
+                        saved_path = self.design_storage.save_design(
+                            self.current_geometry, metadata, self.current_results
+                        )
+
+                        self._log_message(f"Design saved: {name}")
+                        self.status_var.set(f"Saved design: {name}")
+                        self._refresh_designs_list()
+                        name_dialog.destroy()
+
+                    except Exception as e:
+                        self._show_error(f"Failed to save design: {str(e)}")
+                else:
+                    messagebox.showerror("Error", "Please enter a design name.")
+
+            ttk.Button(name_dialog, text="Save", command=save_and_close).pack(pady=(0, 10))
+            name_entry.focus()
+
+            # Bind Enter key
+            name_entry.bind('<Return>', lambda e: save_and_close())
+            name_dialog.bind('<Escape>', lambda e: name_dialog.destroy())
+
+        except Exception as e:
+            self._show_error(f"Error saving design: {str(e)}")
+
+    def _refresh_designs_list(self):
+        """Refresh the designs list from storage."""
+        try:
+            logger.debug("Starting design list refresh...")
+
+            # Validate UI components exist and are accessible
+            if not hasattr(self, 'designs_tree') or self.designs_tree is None:
+                logger.error("designs_tree widget not initialized")
+                raise Exception("Designs tree widget not available")
+
+            # Test widget accessibility
+            try:
+                logger.debug(f"Testing designs_tree widget: {self.designs_tree}")
+                self.designs_tree.cget('height')  # Test widget access
+                logger.debug("Treeview widget is accessible")
+            except Exception as widget_e:
+                logger.error(f"Treeview widget not accessible: {widget_e}")
+                raise Exception(f"Cannot access designs tree widget: {widget_e}")
+
+            # Clear existing items
+            try:
+                existing_items = self.designs_tree.get_children()
+                logger.debug(f"Clearing {len(existing_items)} existing items")
+                for item in existing_items:
+                    self.designs_tree.delete(item)
+                logger.debug("Successfully cleared existing items")
+            except Exception as clear_e:
+                logger.error(f"Failed to clear existing tree items: {clear_e}")
+                raise Exception(f"Cannot clear existing designs: {clear_e}")
+
+            # Load designs
+            logger.debug("Loading designs from storage...")
+            designs = self.design_storage.list_designs(sort_by='created_date', reverse=True)
+            logger.info(f"Storage returned {len(designs)} designs")
+
+            # Add to treeview with individual error handling
+            success_count = 0
+            failed_count = 0
+
+            for i, design in enumerate(designs):
+                try:
+                    # Format data
+                    frequencies = "/".join([f"{f:g}" for f in design.get('frequencies_mhz', [])])
+
+                    # Prepare values tuple
+                    values = (
+                        design.get('name', 'Unknown'),
+                        design.get('band_name', 'Unknown'),
+                        frequencies,
+                        design.get('created_date', '')[:19],  # Truncate timestamp
+                        design.get('design_type', 'Unknown')
+                    )
+
+                    # Insert into tree
+                    tags = (design.get('file_path', ''),)
+                    logger.debug(f"Inserting design {i+1}: {values[0]}")
+                    self.designs_tree.insert('', 'end', values=values, tags=tags)
+                    success_count += 1
+
+                except Exception as insert_e:
+                    failed_count += 1
+                    design_name = design.get('name', f'design_{i+1}')
+                    logger.error(f"Failed to insert design '{design_name}' into treeview: {insert_e}")
+                    # Continue with next design instead of failing completely
+
+            logger.info(f"Treeview insertion complete: {success_count} successful, {failed_count} failed")
+
+            # Update stats with error handling
+            try:
+                stats = self.design_storage.get_design_stats()
+                stats_text = f"Total designs: {stats.get('total_designs', 0)} | Size: {stats.get('total_size_bytes', 0) / 1024:.1f} KB"
+                self.library_stats_var.set(stats_text)
+                logger.debug("Stats updated successfully")
+            except Exception as stats_e:
+                logger.warning(f"Failed to update stats: {stats_e}")
+                self.library_stats_var.set(f"Total designs: {len(designs)}")
+
+            status_msg = f"Loaded {success_count} designs"
+            if failed_count > 0:
+                status_msg += f" ({failed_count} failed)"
+            self.status_var.set(status_msg)
+
+            if failed_count > 0:
+                logger.warning(f"Design list refresh completed with {failed_count} failures")
+                self._show_error(f"Designs list loaded with issues ({failed_count} items failed)")
+            else:
+                logger.info("Design list refresh completed successfully")
+
+        except Exception as e:
+            logger.error(f"Critical failure in design list refresh: {str(e)}")
+            # Try to show user-friendly error
+            try:
+                self._show_error("Failed to load designs list")
+            except Exception as ui_e:
+                logger.error(f"Could not show error dialog: {ui_e}")
+
+            # Attempt to set fallback status
+            try:
+                self.status_var.set("Design library unavailable")
+            except Exception as status_e:
+                logger.error(f"Could not update status: {status_e}")
+            raise
+
+    def _render_svg_thumbnail(self, svg_data_uri):
+        """Render base64 SVG data to tkinter PhotoImage for display.
+
+        Args:
+            svg_data_uri: Base64 encoded SVG data URI (data:image/svg+xml;base64,...)
+
+        Returns:
+            ImageTk.PhotoImage or None if rendering failed
+        """
+        if not PIL_AVAILABLE:
+            logger.warning("PIL libraries not available for SVG rendering")
+            return None
+
+        try:
+            # Extract base64 part from data URI
+            if not svg_data_uri.startswith('data:image/svg+xml;base64,'):
+                logger.error(f"Invalid SVG data URI format: {svg_data_uri[:50]}...")
+                return None
+
+            base64_data = svg_data_uri.split(',', 1)[1]
+
+            # Decode base64 to SVG XML
+            svg_bytes = base64.b64decode(base64_data)
+            svg_string = svg_bytes.decode('utf-8')
+
+            # Convert SVG to PIL Image using svglib
+            svg_buffer = BytesIO(svg_bytes)
+            drawing = svg2rlg(svg_buffer)
+            png_buffer = BytesIO()
+            renderPM.drawToFile(drawing, png_buffer, fmt='PNG')
+            png_buffer.seek(0)
+
+            # Load PIL Image and resize if needed
+            pil_image = Image.open(png_buffer)
+
+            # Limit thumbnail size
+            max_size = (200, 150)  # Max width x height
+            pil_image.thumbnail(max_size, Image.LANCZOS)
+
+            # Convert to tkinter PhotoImage
+            photo_image = ImageTk.PhotoImage(pil_image)
+            return photo_image
+
+        except Exception as e:
+            logger.error(f"Failed to render SVG thumbnail: {str(e)}")
+            return None
+
+    def _on_design_selected(self, event):
+        """Handle design selection in the treeview."""
+        try:
+            selection = self.designs_tree.selection()
+            if not selection:
+                return
+
+            item = selection[0]
+            values = self.designs_tree.item(item, 'values')
+            file_path = self.designs_tree.item(item, 'tags')[0]
+
+            if file_path:
+                try:
+                    # Load design details
+                    metadata, geometry = self.design_storage.load_design(file_path)
+
+                    # Display details
+                    details = f"""Design: {metadata.name}
+Band: {metadata.band_name}
+Frequencies: {metadata.frequencies_mhz[0]}/{metadata.frequencies_mhz[1]}/{metadata.frequencies_mhz[2]} MHz
+Substrate: {metadata.substrate_width}" × {metadata.substrate_height}"
+Trace Width: {metadata.trace_width_mil} mil
+Type: {metadata.design_type}
+Created: {metadata.created_date[:19]}
+
+Notes: {metadata.custom_notes}
+
+Performance Metrics:
+{self._format_performance_metrics(metadata.performance_metrics)}
+"""
+                    self.details_text.delete(1.0, END)
+                    self.details_text.insert(END, details)
+
+                    # Load thumbnail
+                    if metadata.thumbnail_svg and metadata.thumbnail_svg.startswith('data:image'):
+                        # Render SVG thumbnail
+                        photo_image = self._render_svg_thumbnail(metadata.thumbnail_svg)
+                        if photo_image:
+                            # Keep reference to prevent garbage collection
+                            self.current_thumbnail = photo_image
+                            self.thumbnail_label.config(image=photo_image, text="")
+                        else:
+                            self.thumbnail_label.config(image=None, text="Thumbnail rendering failed")
+                    else:
+                        self.thumbnail_label.config(image=None, text="No thumbnail available")
+
+                except Exception as e:
+                    logger.error(f"Failed to load selected design: {str(e)}")
+                    self.details_text.delete(1.0, END)
+                    self.details_text.insert(END, "Failed to load design details")
+
+        except Exception as e:
+            logger.error(f"Error handling design selection: {str(e)}")
+
+    def _format_performance_metrics(self, metrics):
+        """Format performance metrics for display."""
+        try:
+            if not metrics:
+                return "No performance data available"
+
+            formatted = ""
+            validation = metrics.get('validation', {})
+
+            if validation:
+                formatted += "Validation:\n"
+                formatted += f"- Within bounds: {validation.get('within_bounds', False)}\n"
+                formatted += f"- Manufacturable: {validation.get('manufacturable', False)}\n"
+                formatted += f"- Complexity: {validation.get('complexity_score', 'N/A')}/4\n"
+
+            summary = metrics.get('summary', {})
+            if summary:
+                formatted += "\nPerformance:\n"
+                formatted += f"- Avg VSWR: {summary.get('avg_vswr', 'N/A')}\n"
+                formatted += f"- Avg Gain: {summary.get('avg_gain_dbi', 'N/A')} dBi\n"
+                formatted += f"- Bandwidth: {summary.get('bandwidth_octaves', 'N/A')} octaves\n"
+
+            return formatted
+
+        except Exception as e:
+            return f"Error formatting metrics: {str(e)}"
+
+    def _load_selected_design(self):
+        """Load the selected design into the current session."""
+        try:
+            selection = self.designs_tree.selection()
+            if not selection:
+                self._show_error("No design selected")
+                return
+
+            item = selection[0]
+            file_path = self.designs_tree.item(item, 'tags')[0]
+
+            if file_path:
+                metadata, geometry = self.design_storage.load_design(file_path)
+
+                # Load into current session
+                self.current_geometry = geometry
+                self.current_results = metadata.performance_metrics
+
+                # Update UI elements
+                self._show_geometry_preview()
+
+                # Update substrate size if different
+                if hasattr(metadata, 'substrate_width') and metadata.substrate_width:
+                    self.substrate_width_var.set(str(metadata.substrate_width))
+                    self.substrate_height_var.set(str(metadata.substrate_height))
+                    self.trace_width_var.set(metadata.trace_width_mil)
+
+                    # Update generator with loaded substrate size
+                    width = float(metadata.substrate_width)
+                    height = float(metadata.substrate_height)
+                    self.generator = AntennaDesignGenerator(self.nec, width, height)
+
+                # Update status
+                self.status_var.set(f"Loaded design: {metadata.name}")
+                self._log_message(f"Loaded design: {metadata.name}")
+
+                # Switch to results tab to show loaded design
+                # Note: This would require access to the notebook widget
+
+        except Exception as e:
+            logger.error(f"Failed to load selected design: {str(e)}")
+            self._show_error(f"Failed to load design: {str(e)}")
+
+    def _delete_selected_design(self):
+        """Delete the selected design from storage."""
+        try:
+            selection = self.designs_tree.selection()
+            if not selection:
+                self._show_error("No design selected")
+                return
+
+            item = selection[0]
+            values = self.designs_tree.item(item, 'values')
+            file_path = self.designs_tree.item(item, 'tags')[0]
+
+            design_name = values[0] if values else "Unknown"
+
+            # Confirm deletion
+            if not messagebox.askyesno("Confirm Delete",
+                                     f"Delete design '{design_name}'?\nThis action cannot be undone."):
+                return
+
+            # Delete the design
+            if self.design_storage.delete_design(file_path):
+                self._log_message(f"Deleted design: {design_name}")
+                self.status_var.set(f"Deleted design: {design_name}")
+                self._refresh_designs_list()
+                self.details_text.delete(1.0, END)
+                self.thumbnail_label.config(image=None, text="Select a design to view thumbnail")
+                self.current_thumbnail = None  # Clear the reference
+            else:
+                self._show_error("Failed to delete design")
+
+        except Exception as e:
+            logger.error(f"Failed to delete design: {str(e)}")
+            self._show_error(f"Failed to delete design: {str(e)}")
+
+    def _export_selected_design(self):
+        """Export the selected design to vector format."""
+        try:
+            selection = self.designs_tree.selection()
+            if not selection:
+                self._show_error("No design selected")
+                return
+
+            item = selection[0]
+            file_path = self.designs_tree.item(item, 'tags')[0]
+
+            if file_path:
+                metadata, geometry = self.design_storage.load_design(file_path)
+
+                # Set as current geometry for export
+                self.current_geometry = geometry
+                self.current_results = metadata.performance_metrics
+
+                # Use existing export functionality
+                self.export_filename_var.set(metadata.name or "exported_design")
+
+                # Switch to export tab (would need notebook access)
+                # For now, just export to default format
+                self._export_geometry('svg')
+
+        except Exception as e:
+            logger.error(f"Failed to export selected design: {str(e)}")
+            self._show_error(f"Failed to export design: {str(e)}")
+
+    def _edit_design_notes(self):
+        """Edit notes for the selected design."""
+        try:
+            selection = self.designs_tree.selection()
+            if not selection:
+                self._show_error("No design selected")
+                return
+
+            item = selection[0]
+            file_path = self.designs_tree.item(item, 'tags')[0]
+
+            if file_path:
+                metadata, geometry = self.design_storage.load_design(file_path)
+
+                # Notes editing dialog
+                notes_dialog = Toplevel(self.root)
+                notes_dialog.title(f"Edit Notes - {metadata.name}")
+                notes_dialog.geometry("500x300")
+                notes_dialog.resizable(True, True)
+                notes_dialog.transient(self.root)
+                notes_dialog.grab_set()
+
+                ttk.Label(notes_dialog, text="Design Notes:").pack(pady=(10, 0))
+
+                notes_text = ScrolledText(notes_dialog, height=15, wrap=WORD)
+                notes_text.pack(fill='both', expand=True, padx=10, pady=5)
+                notes_text.insert(END, metadata.custom_notes)
+
+                def save_notes():
+                    new_notes = notes_text.get(1.0, END).strip()
+                    if new_notes != metadata.custom_notes:
+                        # Update metadata and save
+                        metadata.custom_notes = new_notes
+
+                        # Re-save the design
+                        saved_path = self.design_storage.save_design(geometry, metadata)
+
+                        self._log_message(f"Updated notes for design: {metadata.name}")
+                        self.status_var.set(f"Updated notes for {metadata.name}")
+
+                    notes_dialog.destroy()
+
+                button_frame = ttk.Frame(notes_dialog)
+                button_frame.pack(fill='x', pady=(0, 10))
+
+                ttk.Button(button_frame, text="Save", command=save_notes).pack(side=RIGHT, padx=5)
+                ttk.Button(button_frame, text="Cancel", command=notes_dialog.destroy).pack(side=RIGHT, padx=5)
+
+                notes_text.focus()
+
+        except Exception as e:
+            logger.error(f"Failed to edit design notes: {str(e)}")
+            self._show_error(f"Failed to edit notes: {str(e)}")
+
+    def _search_designs(self):
+        """Search designs based on search entry."""
+        try:
+            query = self.design_search_var.get().strip()
+
+            if not query:
+                # Show all designs
+                self._refresh_designs_list()
+                return
+
+            # Perform search
+            results = self.design_storage.search_designs(query)
+
+            # Clear existing items
+            for item in self.designs_tree.get_children():
+                self.designs_tree.delete(item)
+
+            # Add search results
+            for design in results:
+                frequencies = "/".join([f"{f:g}" for f in design.get('frequencies_mhz', [])])
+
+                self.designs_tree.insert('', 'end', values=(
+                    design.get('name', 'Unknown'),
+                    design.get('band_name', 'Unknown'),
+                    frequencies,
+                    design.get('created_date', '')[:19],
+                    design.get('design_type', 'Unknown')
+                ), tags=(design.get('file_path', ''),))
+
+            self.status_var.set(f"Search results: {len(results)} matches for '{query}'")
+
+        except Exception as e:
+            logger.error(f"Search failed: {str(e)}")
+            self._show_error("Search failed")
+
+    def _delayed_initial_refresh(self):
+        """Delayed initialization of design library after mainloop starts."""
+        logger.info("Performing delayed design library initialization...")
+        try:
+            self._refresh_designs_list()
+            logger.info("Design library loaded successfully")
+        except Exception as e:
+            logger.error(f"Delayed design library initialization failed: {str(e)}")
+            # Show error but don't crash application
+            self._show_design_storage_error(str(e))
+            # Continue with empty design list
+
+    def _show_design_storage_error(self, error_msg):
+        """Show design storage initialization error with recovery options."""
+        try:
+            logger.warning(f"Design storage initialization error: {error_msg}")
+            self.library_stats_var.set("Error loading design library")
+
+            # Don't crash, show a warning dialog and continue with empty library
+            error_info = f"""Design Library Warning
+
+The application encountered an error while loading your saved designs:
+
+{error_msg}
+
+The design library feature will not be available until the issue is resolved. You can continue using the design and export features normally.
+
+Possible solutions:
+• Check that the designs directory exists and is accessible
+• Ensure design files are not corrupted
+• Try restarting the application
+
+Click OK to continue with an empty design library.
+"""
+            messagebox.showwarning("Design Library Warning", error_info)
+        except Exception as e:
+            logger.error(f"Failed to show design storage error dialog: {str(e)}")
+
+
+def test_storage():
+    """Test design storage system without launching GUI."""
+    try:
+        print("Testing design storage initialization...")
+        from storage import DesignStorage, DesignMetadata
+
+        # Test initialization
+        storage = DesignStorage()
+        print(f"✓ Storage initialized at: {storage.storage_dir}")
+
+        # Test listing designs
+        designs = storage.list_designs()
+        print(f"✓ Found {len(designs)} existing designs")
+
+        if designs:
+            # Test loading a design
+            first_design = designs[0]
+            file_path = first_design.get('file_path')
+            if file_path:
+                metadata, geometry = storage.load_design(file_path)
+                print(f"✓ Successfully loaded design: {metadata.name}")
+            else:
+                print("! Could not find file path in design metadata")
+
+        # Test creating and saving a test design
+        print("Testing design save...")
+        test_metadata = DesignMetadata(
+            name="Storage Test Design",
+            frequencies_mhz=(2400, 5500, 5800)
+        )
+
+        test_geometry = """CM Mini Antenna Designer Storage Test
+GW      1   1   0.000   0.000   0.000   1.000   0.000   0.010
+GW      2   1   0.000   0.000   0.010   0.000   1.000   0.010
+GE      1   0   0       0       0       0
+GN      1   0   0       0       0       0
+FR      0   1   0       0       2400    0
+EX      0   1   1       1       0       0
+RP      0   1   1       1001    0       0       1.000   1.000   0       0"""
+
+        saved_path = storage.save_design(test_geometry, test_metadata)
+        print(f"✓ Saved test design to: {saved_path}")
+
+        # Test cleanup
+        if storage.delete_design(saved_path):
+            print("✓ Successfully cleaned up test design")
+        else:
+            print("! Failed to clean up test design")
+
+        print("\n✓ All storage tests passed!")
+
+    except Exception as e:
+        print(f"✗ Storage test failed: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return False
+
+    return True
+
+
 def main():
     """Main application entry point."""
+    import sys
+
+    # Check for debug flags
+    if len(sys.argv) > 1:
+        if sys.argv[1] == '--test-storage':
+            success = test_storage()
+            sys.exit(0 if success else 1)
+        elif sys.argv[1] == '--debug-storage':
+            print("Running storage diagnostics...")
+            success = test_storage()
+            if success:
+                print("Starting application in debug mode...")
+            else:
+                print("Storage tests failed, starting application anyway...")
+        else:
+            print(f"Unknown argument: {sys.argv[1]}")
+            print("Usage: python ui.py [--test-storage|--debug-storage]")
+            sys.exit(1)
+
     try:
         root = Tk()
         app = AntennaDesignerGUI(root)
@@ -882,6 +1733,9 @@ def main():
     except Exception as e:
         logger.critical(f"Application startup failed: {str(e)}")
         messagebox.showerror("Startup Error", f"Failed to start application:\n{str(e)}")
+        import traceback
+        traceback.print_exc()
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

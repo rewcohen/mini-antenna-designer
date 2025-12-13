@@ -20,7 +20,7 @@ class AntennaDesignGenerator:
         self.advanced_meander = AdvancedMeanderTrace(substrate_width=substrate_width, substrate_height=substrate_height)
         logger.info(f"Antenna design generator initialized with advanced meander capability for {substrate_width}x{substrate_height} inch substrate")
 
-    def generate_design(self, frequency_band: FrequencyBand) -> Dict:
+    def generate_design(self, frequency_band: FrequencyBand, trace_width_inches: float = None) -> Dict:
         """Generate antenna design for given frequency band.
 
         Args:
@@ -37,7 +37,7 @@ class AntennaDesignGenerator:
             design_type = self._determine_design_type(f1, f2, f3, frequency_band)
 
             # Generate geometry based on frequency relationships
-            geometry = self._generate_geometry_for_type(design_type, f1, f2, f3)
+            geometry = self._generate_geometry_for_type(design_type, f1, f2, f3, trace_width_inches)
 
             # Validate fits substrate
             validation = self._validate_design(geometry)
@@ -112,7 +112,7 @@ class AntennaDesignGenerator:
             logger.info(f"  Selected: advanced_meander_compound (large separation, ratio > 4.0)")
             return 'advanced_meander_compound'  # Compound advanced meanders
 
-    def _generate_geometry_for_type(self, design_type: str, f1: float, f2: float, f3: float) -> str:
+    def _generate_geometry_for_type(self, design_type: str, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> str:
         """Generate NEC2 geometry for specific design type."""
         geometrics = []
 
@@ -148,11 +148,11 @@ class AntennaDesignGenerator:
 
         elif design_type == 'advanced_meander_tri_band':
             # Advanced meander design for tri-band operation
-            geometrics = self._generate_advanced_meander_tri_band(f1, f2, f3)
+            geometrics = self._generate_advanced_meander_tri_band(f1, f2, f3, trace_width_inches)
 
         elif design_type == 'advanced_meander_dual':
             # Advanced meander design for dual-band operation
-            geometrics = self._generate_advanced_meander_dual(f1, f2, f3)
+            geometrics = self._generate_advanced_meander_dual(f1, f2, f3, trace_width_inches)
 
         elif design_type == 'advanced_meander_compound':
             # Compound advanced meander design
@@ -543,7 +543,7 @@ class AntennaDesignGenerator:
             logger.warning(f"Failed to add boom structure: {str(e)}")
             return ""
 
-    def _generate_advanced_meander_tri_band(self, f1: float, f2: float, f3: float) -> List[str]:
+    def _generate_advanced_meander_tri_band(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
         """Generate advanced meander design for tri-band operation."""
         try:
             logger.info(f"Generating advanced meander tri-band design for {f1}/{f2}/{f3} MHz")
@@ -582,7 +582,7 @@ class AntennaDesignGenerator:
             logger.error(f"Advanced meander tri-band generation failed: {str(e)}")
             return [self.designer.generate_dipole(f1, use_meandering=True)]
     
-    def _generate_advanced_meander_dual(self, f1: float, f2: float, f3: float) -> List[str]:
+    def _generate_advanced_meander_dual(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
         """Generate advanced meander design for dual-band operation."""
         try:
             logger.info(f"Generating advanced meander dual-band design for {f1}/{f2}/{f3} MHz")
@@ -621,13 +621,17 @@ class AntennaDesignGenerator:
             logger.error(f"Advanced meander dual-band generation failed: {str(e)}")
             return [self.designer.generate_dipole(f1, use_meandering=True)]
     
-    def _generate_advanced_meander_compound(self, f1: float, f2: float, f3: float) -> List[str]:
+    def _generate_advanced_meander_compound(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
         """Generate compound advanced meander design for widely separated frequencies."""
         try:
-            logger.info(f"Generating advanced meander compound design for {f1}/{f2}/{f3} MHz")
-            
+            logger.info(f"Generating advanced meander compound design for {f1}/{f2}/{f3} MHz" +
+                       (f" with custom trace width {trace_width_inches*1000:.1f} mil" if trace_width_inches else ""))
+
             geometries = []
-            
+
+            # Use custom trace width if provided, otherwise use frequency-dependent defaults
+            default_trace_width = trace_width_inches if trace_width_inches is not None else 0.001
+
             # Low frequency: Large meander with high coupling
             if f1 > 0:
                 low_freq_constraints = {
@@ -635,12 +639,12 @@ class AntennaDesignGenerator:
                     'substrate_thickness': 0.0016,
                     'coupling_factor': 0.95,  # High coupling for low freq
                     'bend_radius': 0.0015,  # Larger bends for low freq
-                    'trace_width': 0.0015,  # Wider traces for low freq
+                    'trace_width': trace_width_inches if trace_width_inches is not None else 0.0015,  # Use custom or wider traces for low freq
                 }
                 geom1 = self.advanced_meander.generate_advanced_meander(f1, low_freq_constraints)
                 if geom1:
                     geometries.append(geom1)
-            
+
             # Mid frequency: Standard meander
             if f2 > 0:
                 mid_freq_constraints = {
@@ -648,12 +652,12 @@ class AntennaDesignGenerator:
                     'substrate_thickness': 0.0016,
                     'coupling_factor': 0.90,  # Standard coupling
                     'bend_radius': 0.001,  # Standard bends
-                    'trace_width': 0.001,  # Standard traces
+                    'trace_width': trace_width_inches if trace_width_inches is not None else 0.001,  # Use custom or standard traces for mid freq
                 }
                 geom2 = self.advanced_meander.generate_advanced_meander(f2, mid_freq_constraints)
                 if geom2:
                     geometries.append(geom2)
-            
+
             # High frequency: Compact meander with low coupling
             if f3 > 0:
                 high_freq_constraints = {
@@ -661,23 +665,23 @@ class AntennaDesignGenerator:
                     'substrate_thickness': 0.0016,
                     'coupling_factor': 0.85,  # Low coupling for high freq
                     'bend_radius': 0.0005,  # Tight bends for high freq
-                    'trace_width': 0.0005,  # Narrow traces for high freq
+                    'trace_width': trace_width_inches if trace_width_inches is not None else 0.0005,  # Use custom or narrow traces for high freq
                 }
                 geom3 = self.advanced_meander.generate_advanced_meander(f3, high_freq_constraints)
                 if geom3:
                     geometries.append(geom3)
-            
+
             if geometries:
                 logger.info(f"Advanced meander compound generated: {len(geometries)} frequency-optimized elements")
             else:
                 # Fallback
-                geometries = [self.designer.generate_dipole(f1, use_meandering=True)]
-            
+                geometries = [self.designer.generate_dipole(f1, use_meandering=True, trace_width_inches=trace_width_inches)]
+
             return geometries
-            
+
         except Exception as e:
             logger.error(f"Advanced meander compound generation failed: {str(e)}")
-            return [self.designer.generate_dipole(f1, use_meandering=True)]
+            return [self.designer.generate_dipole(f1, use_meandering=True, trace_width_inches=trace_width_inches)]
 
 
 def _estimate_etch_time(element_count: int) -> str:

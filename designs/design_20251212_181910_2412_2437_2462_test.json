@@ -1,0 +1,56 @@
+{
+  "metadata": {
+    "design_id": "f5bec72c-2041-47de-aad8-26e2c859681c",
+    "name": "test",
+    "frequencies_mhz": [
+      2412,
+      2437,
+      2462
+    ],
+    "substrate_width": 4.0,
+    "substrate_height": 2.0,
+    "trace_width_mil": 10.0,
+    "design_type": "advanced_meander_tri_band",
+    "band_name": "WiFi 2.4GHz Extended",
+    "performance_metrics": {
+      "freq_2412_mhz": {
+        "vswr": 2.5,
+        "gain_dbi": 3.2,
+        "impedance": "48.0+12.0j Ω"
+      },
+      "freq_2437_mhz": {
+        "vswr": 2.5,
+        "gain_dbi": 3.2,
+        "impedance": "48.0+12.0j Ω"
+      },
+      "freq_2462_mhz": {
+        "vswr": 2.5,
+        "gain_dbi": 3.2,
+        "impedance": "48.0+12.0j Ω"
+      },
+      "summary": {
+        "avg_vswr": 2.5,
+        "avg_gain_dbi": 3.2000000000000006,
+        "frequency_range_mhz": "2412 - 2462",
+        "bandwidth_octaves": 1.0207296849087895
+      },
+      "validation": {
+        "within_bounds": true,
+        "max_extent": 1.911,
+        "max_extents": 1.911,
+        "utilization_percent": 81.69525,
+        "bound_violations": [],
+        "warnings": [],
+        "manufacturable": true,
+        "complexity_score": 1,
+        "estimated_etch_time": "~5-8 minutes"
+      }
+    },
+    "custom_notes": "",
+    "thumbnail_svg": "data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiPz4KPHN2ZyB3aWR0aD0iMjAwIiBoZWlnaHQ9IjEwMCIgdmlld0JveD0iMCAwIDIwMCAxMDAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+CiAgPHJlY3Qgd2lkdGg9IjIwMCIgaGVpZ2h0PSIxMDAiIGZpbGw9IndoaXRlIi8+CiAgPGcgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIj4KICAgIDxwYXRoIGQ9Ik0gMTAuMCAxMC4wIEwgOTkuNCAxMC4wIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuMCIgZmlsbD0ibm9uZSIvPgogICAgICA8cGF0aCBkPSJNIDk5LjQgMTAuMCBMIDk5LjQgMTEuOCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjAiIGZpbGw9Im5vbmUiLz4KICAgICAgPHBhdGggZD0iTSA5OS40IDExLjggTCAxMC4wIDExLjgiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMS4wIiBmaWxsPSJub25lIi8+CiAgICAgIDxwYXRoIGQ9Ik0gMTAuMCAxMS44IEwgMTAuMCAxMy42IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuMCIgZmlsbD0ibm9uZSIvPgogICAgICA8cGF0aCBkPSJNIDEwLjAgMTMuNiBMIDk5LjQgMTMuNiIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjAiIGZpbGw9Im5vbmUiLz4KICAgICAgPHBhdGggZD0iTSA5OS40IDEzLjYgTCA5OS40IDE1LjMiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMS4wIiBmaWxsPSJub25lIi8+CiAgICAgIDxwYXRoIGQ9Ik0gMTAuMCA5MC4wIEwgOTkuNCA5MC4wIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuMCIgZmlsbD0ibm9uZSIvPgogICAgICA8cGF0aCBkPSJNIDk5LjQgOTAuMCBMIDk5LjQgODguMiIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjAiIGZpbGw9Im5vbmUiLz4KICAgICAgPHBhdGggZD0iTSA5OS40IDg4LjIgTCAxMC4wIDg4LjIiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMS4wIiBmaWxsPSJub25lIi8+CiAgICAgIDxwYXRoIGQ9Ik0gMTAuMCA4OC4yIEwgMTAuMCA4Ni40IiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuMCIgZmlsbD0ibm9uZSIvPgogICAgICA8cGF0aCBkPSJNIDEwLjAgODYuNCBMIDk5LjQgODYuNCIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLXdpZHRoPSIxLjAiIGZpbGw9Im5vbmUiLz4KICAgICAgPHBhdGggZD0iTSA5OS40IDg2LjQgTCA5OS40IDg0LjciIHN0cm9rZT0iYmxhY2siIHN0cm9rZS13aWR0aD0iMS4wIiBmaWxsPSJub25lIi8+CiAgICAgIDxwYXRoIGQ9Ik0gMTAuMCA1MC4wIEwgMTAuMCA1MC4wIiBzdHJva2U9ImJsYWNrIiBzdHJva2Utd2lkdGg9IjEuMCIgZmlsbD0ibm9uZSIvPgogIDwvZz4KPC9zdmc+",
+    "created_date": "2025-12-12T18:19:10.028997"
+  },
+  "geometry": "GW 1 1 0.0000 0.8550 0 1.9110 0.8550 0 0.0080\nGW 2 1 1.9110 0.8550 0 1.9110 0.8170 0 0.0080\nGW 3 1 1.9110 0.8170 0 0.0000 0.8170 0 0.0080\nGW 4 1 0.0000 0.8170 0 0.0000 0.7790 0 0.0080\nGW 5 1 0.0000 0.7790 0 1.9110 0.7790 0 0.0080\nGW 6 1 1.9110 0.7790 0 1.9110 0.7410 0 0.0080\nGW 7 1 0.0000 -0.8550 0 1.9110 -0.8550 0 0.0080\nGW 8 1 1.9110 -0.8550 0 1.9110 -0.8170 0 0.0080\nGW 9 1 1.9110 -0.8170 0 0.0000 -0.8170 0 0.0080\nGW 10 1 0.0000 -0.8170 0 0.0000 -0.7790 0 0.0080\nGW 11 1 0.0000 -0.7790 0 1.9110 -0.7790 0 0.0080\nGW 12 1 1.9110 -0.7790 0 1.9110 -0.7410 0 0.0080\nGW 13 1 0 0 0 0 0 0 0.0080",
+  "version": "1.0",
+  "software": "Mini Antenna Designer v1.0"
+}

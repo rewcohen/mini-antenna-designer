@@ -819,7 +819,7 @@ class AdvancedMeanderTrace:
     def _generate_spiral_arm(self, start_x: float, start_y: float, target_length: float,
                             max_x: float, max_y: float, direction: str,
                             trace_width: float, side_name: str, start_tag: int) -> tuple:
-        """Generate one arm of a spiral dipole with proper meander pattern.
+        """Generate one arm of a spiral dipole with proper meander pattern that maximizes substrate utilization.
 
         Args:
             start_x, start_y: Starting coordinates (feed point)
@@ -842,55 +842,105 @@ class AdvancedMeanderTrace:
             current_x = start_x
             current_y = start_y
 
-            # Use a simpler meander pattern similar to pattern_generator.py
-            # This creates a more reliable Greek key/meander pattern
-            step_size = trace_width * 3.0  # Spacing between meander lines
-            segment_length = max_x * 0.9  # Use most of available width
+            # More aggressive substrate utilization for larger substrates
+            available_height = max_y * 2  # Total height available
+            min_vertical_spacing = trace_width * 2.0  # Reduced minimum spacing for better utilization
 
-            logger.debug(f"Generating {side_name} meander: start=({current_x:.3f},{current_y:.3f}), "
-                       f"bounds=({max_x:.3f},{max_y:.3f}), target={target_length:.2f}\"")
+            # For larger substrates (>4 inches), use more aggressive spacing
+            if max_x > 2.0 or max_y > 2.0:  # Large substrate detected
+                min_vertical_spacing = trace_width * 1.5  # Even more aggressive for large substrates
+                max_passes = min(30, int(available_height / min_vertical_spacing))  # Allow more passes
+            else:
+                max_passes = 15  # Conservative limit for smaller substrates
 
-            # Generate meander pattern with proper alternation
+            # Use full substrate width for each meander pass
+            segment_length = max_x * 0.95  # Use 95% of available width
+
+            # Strategy: Maximize substrate utilization by calculating optimal vertical distribution
+            # Start with the minimum spacing and calculate how many passes we can fit
+            max_possible_passes = min(max_passes, int(available_height / min_vertical_spacing))
+
+            # Calculate optimal step size to utilize as much height as possible
+            if max_possible_passes > 1:
+                # Distribute passes across entire available height
+                step_size = available_height / max_possible_passes
+                # Ensure minimum spacing is maintained
+                step_size = max(min_vertical_spacing, step_size)
+            else:
+                step_size = min_vertical_spacing
+
+            logger.debug(f"Maximized substrate utilization: max_y={max_y:.3f}\" ({available_height:.3f}\" total), "
+                       f"max_passes={max_possible_passes}, step_size={step_size:.3f}\", "
+                       f"segment_length={segment_length:.3f}\", target={target_length:.2f}\"")
+
+            # Generate meander pattern with alternating horizontal passes
             meander_pass = 0
             horizontal_direction = 1  # Start going right
+            continue_expansion = True
 
-            while current_length < target_length and abs(current_y) < max_y:
-                # Horizontal segment
+            # Generate passes until we can't fit more or reach practical limits
+            while continue_expansion and meander_pass < max_possible_passes:
+                # Check if we've exceeded vertical bounds
+                next_y = current_y + (step_size if direction == 'up' else -step_size)
+
+                # If this would exceed bounds AND we've already met target length, stop
+                if abs(next_y) > max_y and current_length >= target_length * 0.8:  # 80% is acceptable
+                    logger.debug(f"{side_name} meander reached vertical bound after adequate length")
+                    break
+
+                # Horizontal segment - always use full available width
                 segment_end_x = current_x + horizontal_direction * segment_length
                 segment_length_actual = abs(segment_end_x - current_x)
 
-                if segment_length_actual > 0.005:
+                # Ensure we don't exceed horizontal bounds
+                if abs(segment_end_x) > max_x:
+                    segment_end_x = max_x if horizontal_direction > 0 else -max_x
+                    segment_length_actual = abs(segment_end_x - current_x)
+
+                if segment_length_actual > 0.005:  # Skip very small segments
                     geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 {segment_end_x:.4f} {current_y:.4f} 0 {trace_width:.4f}")
                     gw_tag += 1
                     current_length += segment_length_actual
 
                 current_x = segment_end_x
 
-                # Vertical segment (move to next meander line)
-                if current_length < target_length:
-                    if direction == 'up':
-                        segment_end_y = current_y + step_size
-                    else:
-                        segment_end_y = current_y - step_size
+                # Move to next vertical level if we haven't filled the substrate
+                can_add_vertical = abs(next_y) <= max_y and meander_pass < max_possible_passes - 1
+                should_add_vertical = current_length < target_length * 1.2  # Allow 20% extra length
 
-                    segment_length_vertical = abs(segment_end_y - current_y)
+                if can_add_vertical and should_add_vertical:
+                    segment_length_vertical = abs(next_y - current_y)
 
                     if segment_length_vertical > 0.005:
-                        geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 {current_x:.4f} {segment_end_y:.4f} 0 {trace_width:.4f}")
+                        geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 {current_x:.4f} {next_y:.4f} 0 {trace_width:.4f}")
                         gw_tag += 1
                         current_length += segment_length_vertical
 
-                    current_y = segment_end_y
-                    horizontal_direction *= -1  # Reverse direction for next horizontal segment
+                        current_y = next_y
+                        horizontal_direction *= -1  # Reverse direction for next horizontal segment
+                    else:
+                        # Can't make meaningful vertical move, stop expansion
+                        continue_expansion = False
+                else:
+                    # Can't add more vertical levels, stop expansion
+                    continue_expansion = False
 
                 meander_pass += 1
 
-                # Safety check
-                if meander_pass > 20:
-                    logger.warning(f"Meander pass limit reached for {side_name} side")
+                # Emergency break for runaway generation
+                if meander_pass >= max_possible_passes:
+                    logger.warning(f"{side_name} meander reached maximum passes ({max_possible_passes})")
                     break
 
-            logger.debug(f"{side_name.capitalize()} meander: {len(geometry)} segments, {current_length:.2f}\" length, {meander_pass} passes")
+            # Calculate final utilization metrics
+            final_y_range = abs(current_y) * 2  # Total Y span used
+            height_utilization = min(100.0, (final_y_range / available_height) * 100)
+            width_utilization = min(100.0, (segment_length / (max_x * 2)) * 100)  # Based on final segment length
+            overall_utilization = (height_utilization + width_utilization) / 2
+
+            logger.info(f"{side_name} spiral arm: {len(geometry)} segments, {current_length:.2f}\" length "
+                       f"({current_length/target_length*100:.1f}% of target), {meander_pass} passes, "
+                       f"height utilization: {height_utilization:.1f}%, overall: {overall_utilization:.1f}%")
 
             return geometry, gw_tag
 
@@ -993,57 +1043,96 @@ class AdvancedMeanderTrace:
             substrate_area = self.substrate_width * self.substrate_height
             area_per_band = substrate_area / len(frequencies)
             
-            # Determine optimal layout based on frequency separation
-            if len(frequencies) == 2:
-                layout_strategy = 'vertical_split'
-            elif len(frequencies) == 3:
-                layout_strategy = 'triple_vertical'
+            # For large substrates, use a unified approach that fills the entire substrate area
+            # instead of separate vertical bands
+            logger.info(f"Using unified substrate utilization strategy for large substrate (8x8+)")
+
+            # Create a single large meander that resonates at all frequencies
+            # by combining the design requirements
+            max_freq = max(frequencies)
+            min_freq = min(frequencies)
+
+            # Calculate combined electrical requirements
+            combined_length = (self.extract_target_length(max_freq) + self.extract_target_length(min_freq)) * 1.5
+            combined_constraints = self._calculate_unified_constraints(frequencies, constraints or {})
+
+            # Position the unified meander to fill the substrate
+            combined_constraints.update({
+                'substrate_width': self.substrate_width,
+                'substrate_height': self.substrate_height,
+                'target_area_coverage': 0.8  # Aim for 80% substrate utilization
+            })
+
+            # Generate unified meander geometry
+            unified_geometry = self._generate_unified_substrate_meander(frequencies, combined_constraints)
+
+            if unified_geometry:
+                multi_band_result['combined_geometry'] = unified_geometry
+                multi_band_result['geometries']['unified'] = unified_geometry
+
+                # Calculate metrics for the unified design
+                freq_hz = sum(f * 1e6 for f in frequencies) / len(frequencies)  # Average frequency
+                geometry_params = self._extract_geometry_params(unified_geometry)
+                if geometry_params:
+                    metrics = self.calculate_electrical_metrics(geometry_params, freq_hz)
+                    for i in range(len(frequencies)):
+                        multi_band_result['metrics'][f'band_{i+1}'] = metrics
+
+                logger.info(f"Generated unified substrate-filling meander: {len(unified_geometry.split())} segments")
             else:
-                layout_strategy = 'grid'
-            
-            logger.info(f"Using layout strategy: {layout_strategy}")
-            
-            # Generate meanders for each frequency
-            all_geometries = []
-            tag_offset = 0
-            
-            for freq_mhz, original_idx in freq_with_index:
-                # Calculate band-specific constraints
-                band_constraints = self._calculate_band_constraints(
-                    freq_mhz, original_idx, len(frequencies), layout_strategy, constraints
-                )
-                
-                # Generate meander for this frequency
-                geometry = self.generate_advanced_meander(freq_mhz, band_constraints)
-                
-                if geometry:
-                    # Adjust wire tags to avoid conflicts
-                    adjusted_geometry = self._adjust_wire_tags(geometry, tag_offset)
-                    all_geometries.append(adjusted_geometry)
-                    
-                    # Store results
-                    multi_band_result['geometries'][f'band_{original_idx+1}'] = adjusted_geometry
-                    multi_band_result['parameters'][f'band_{original_idx+1}'] = band_constraints
-                    
-                    # Calculate electrical metrics
-                    freq_hz = freq_mhz * 1e6
-                    # Extract geometry parameters for metrics calculation
-                    geometry_params = self._extract_geometry_params(adjusted_geometry)
-                    if geometry_params:
-                        metrics = self.calculate_electrical_metrics(geometry_params, freq_hz)
-                        multi_band_result['metrics'][f'band_{original_idx+1}'] = metrics
-                    
-                    # Update tag offset for next band
-                    tag_offset += 1000  # Large offset to avoid conflicts
-                    
-                    logger.info(f"Generated meander for band {original_idx+1} ({freq_mhz} MHz): "
-                              f"{len(adjusted_geometry.split())} segments")
+                logger.warning("Failed to generate unified meander, falling back to individual bands")
+
+                # Fallback: Determine optimal layout based on frequency separation
+                if len(frequencies) == 2:
+                    layout_strategy = 'vertical_split'
+                elif len(frequencies) == 3:
+                    layout_strategy = 'triple_vertical'
                 else:
-                    logger.warning(f"Failed to generate meander for band {original_idx+1} ({freq_mhz} MHz)")
-            
-            # Combine all geometries
-            if all_geometries:
-                multi_band_result['combined_geometry'] = "\n".join(all_geometries)
+                    layout_strategy = 'grid'
+
+                logger.info(f"Using fallback layout strategy: {layout_strategy}")
+
+                # Generate meanders for each frequency
+                all_geometries = []
+                tag_offset = 0
+
+                for freq_mhz, original_idx in freq_with_index:
+                    # Calculate band-specific constraints
+                    band_constraints = self._calculate_band_constraints(
+                        freq_mhz, original_idx, len(frequencies), layout_strategy, constraints
+                    )
+
+                    # Generate meander for this frequency
+                    geometry = self.generate_advanced_meander(freq_mhz, band_constraints)
+
+                    if geometry:
+                        # Adjust wire tags to avoid conflicts
+                        adjusted_geometry = self._adjust_wire_tags(geometry, tag_offset)
+                        all_geometries.append(adjusted_geometry)
+
+                        # Store results
+                        multi_band_result['geometries'][f'band_{original_idx+1}'] = adjusted_geometry
+                        multi_band_result['parameters'][f'band_{original_idx+1}'] = band_constraints
+
+                        # Calculate electrical metrics
+                        freq_hz = freq_mhz * 1e6
+                        # Extract geometry parameters for metrics calculation
+                        geometry_params = self._extract_geometry_params(adjusted_geometry)
+                        if geometry_params:
+                            metrics = self.calculate_electrical_metrics(geometry_params, freq_hz)
+                            multi_band_result['metrics'][f'band_{original_idx+1}'] = metrics
+
+                        # Update tag offset for next band
+                        tag_offset += 1000  # Large offset to avoid conflicts
+
+                        logger.info(f"Generated meander for band {original_idx+1} ({freq_mhz} MHz): "
+                                  f"{len(adjusted_geometry.split())} segments")
+                    else:
+                        logger.warning(f"Failed to generate meander for band {original_idx+1} ({freq_mhz} MHz)")
+
+                # Combine all geometries
+                if all_geometries:
+                    multi_band_result['combined_geometry'] = "\n".join(all_geometries)
                 logger.info(f"Combined multi-band geometry: {len(all_geometries)} bands, "
                           f"{len(multi_band_result['combined_geometry'].split())} total segments")
             
@@ -1307,7 +1396,267 @@ class AdvancedMeanderTrace:
                        f"spatial_utilization={summary['spatial_utilization']:.1f}%")
             
             return summary
-            
+
         except Exception as e:
             logger.error(f"Optimization summary calculation failed: {str(e)}")
             return {}
+
+    def extract_target_length(self, frequency_mhz: float) -> float:
+        """Extract target electrical length for a frequency (helper method).
+
+        Args:
+            frequency_mhz: Frequency in MHz
+
+        Returns:
+            float: Target length in inches
+        """
+        try:
+            # Same calculation as used in generate_advanced_meander
+            frequency_hz = frequency_mhz * 1e6
+            er_eff = self.calculate_effective_permittivity(
+                self.substrate_epsilon, self.substrate_thickness, 0.001
+            )
+            L_target = self.calculate_target_length(frequency_hz, er_eff, 0.90)
+            return L_target * 39.3701  # Convert meters to inches
+        except Exception:
+            return 10.0  # Default fallback
+
+    def _calculate_unified_constraints(self, frequencies: List[float],
+                                      base_constraints: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Calculate unified constraints for substrate-filling meander.
+
+        Args:
+            frequencies: List of frequencies in MHz
+            base_constraints: Base constraints to modify
+
+        Returns:
+            dict: Unified constraints for full substrate utilization
+        """
+        try:
+            if base_constraints is None:
+                base_constraints = {}
+
+            # Unified constraints prioritize substrate utilization over individual band optimization
+            unified = base_constraints.copy()
+
+            # Calculate average frequency for unified design
+            avg_freq = sum(frequencies) / len(frequencies)
+
+            # Very aggressive trace width for maximum length in substrate
+            unified.update({
+                'trace_width': 0.008,  # 8 mil traces
+                'coupling_factor': 0.92,  # Balanced coupling
+                'bend_radius': 0.0008,  # 0.8mm bends
+                'target_electrical_length': sum(self.extract_target_length(f) for f in frequencies) * 1.2,
+                'substrate_utilization_priority': True
+            })
+
+            logger.info(f"Unified constraints for {len(frequencies)} bands: "
+                       f"avg_freq={avg_freq:.1f}MHz, trace_width={unified['trace_width']*1000:.0f}mil, "
+                       f"target_length={unified['target_electrical_length']:.2f}\"")
+
+            return unified
+
+        except Exception as e:
+            logger.error(f"Unified constraints calculation failed: {str(e)}")
+            return base_constraints or {}
+
+    def _generate_unified_substrate_meander(self, frequencies: List[float],
+                                          constraints: Dict[str, Any]) -> str:
+        """Generate a single meander that fills the entire substrate and resonates at multiple frequencies.
+
+        Args:
+            frequencies: List of target frequencies in MHz
+            constraints: Design constraints
+
+        Returns:
+            str: NEC2 geometry for unified substrate-filling meander
+        """
+        try:
+            # Create a massive meander that fills as much of the substrate as possible
+            # This approach prioritizes space utilization over precision frequency matching
+
+            # Use combined target length from all frequencies
+            target_length = constraints.get('target_electrical_length', 100.0)
+            trace_width = constraints.get('trace_width', 0.008)
+            bend_radius = constraints.get('bend_radius', 0.0008)
+
+            # Maximize substrate utilization by using nearly full bounds
+            max_x = self.substrate_width / 2 - 0.05  # Leave tiny margin
+            max_y = self.substrate_height / 2 - 0.05
+
+            logger.info(f"Generating unified substrate meander: target={target_length:.2f}\", "
+                       f"bounds=({max_x:.3f}\", {max_y:.3f}\"), trace={trace_width*1000:.0f}mil")
+
+            # Create dual spiral arms that fill the entire substrate
+            geometry = []
+            gw_tag = 1
+
+            # Create dual spirals that efficiently fill the entire substrate vertically
+            # Don't use artificial region restrictions - let spirals fill full height with controlled spacing
+
+            # Generate positive spiral starting from top, filling downward
+            positive_segments, pos_tag = self._generate_max_density_spiral(
+                center_x=0, center_y=max_y * 0.9, target_length=target_length/2,
+                max_x=max_x, max_y=max_y, direction='down',  # Start high, fill downward
+                trace_width=trace_width, side_name='unified_positive',
+                start_tag=gw_tag
+            )
+
+            # Generate negative spiral starting from bottom, filling upward
+            negative_segments, neg_tag = self._generate_max_density_spiral(
+                center_x=0, center_y=-max_y * 0.9, target_length=target_length/2,
+                max_x=max_x, max_y=max_y, direction='up',  # Start low, fill upward
+                trace_width=trace_width, side_name='unified_negative',
+                start_tag=pos_tag
+            )
+
+            # Combine all segments
+            geometry.extend(positive_segments)
+            geometry.extend(negative_segments)
+
+            # Add feed connection
+            geometry.append(f"GW {neg_tag} 1 0 0 0 0 0 0 {trace_width:.4f}")
+
+            result = "\n".join(geometry)
+            logger.info(f"Generated unified substrate meander: {len(geometry)} segments, "
+                       f"{len(result.split())} total lines")
+
+            return result
+
+        except Exception as e:
+            logger.error(f"Unified substrate meander generation failed: {str(e)}")
+            return ""
+
+    def _generate_max_density_spiral(self, center_x: float, center_y: float, target_length: float,
+                                   max_x: float, max_y: float, direction: str,
+                                   trace_width: float, side_name: str, start_tag: int) -> tuple:
+        """Generate a maximum-density spiral that fills the entire substrate with dense meanders.
+        This version allows unlimited vertical range for optimal substrate utilization.
+
+        Args:
+            center_x, center_y: Center coordinates for spiral
+            target_length: Target electrical length
+            max_x, max_y: Maximum bounds (full substrate limits)
+            direction: 'up' or 'down' - preferred direction but can go anywhere
+            trace_width: Trace width
+            side_name: Name for logging
+            start_tag: Starting GW tag
+
+        Returns:
+            tuple: (geometry segments, final tag)
+        """
+        try:
+            geometry = []
+            gw_tag = start_tag
+            current_length = 0.0
+            current_x = center_x
+            current_y = center_y
+
+            # For maximum density, use the full available substrate area
+            available_height = max_y * 2  # Total substrate height
+
+            # Calculate minimum viable vertical spacing for maximum density
+            min_vertical_spacing = trace_width * 1.2  # Reduced to maximize packing density
+            segment_length = max_x * 0.98  # Use 98% of available width
+
+            # Calculate maximum possible passes across entire substrate
+            max_possible_passes = min(50, int(available_height / min_vertical_spacing))
+
+            # Distribute passes evenly across available height for maximum utilization
+            if max_possible_passes > 1:
+                step_size = available_height / max_possible_passes
+                # Ensure minimum spacing is maintained but maximize passes
+                step_size = max(min_vertical_spacing, step_size)
+            else:
+                step_size = min_vertical_spacing
+
+            logger.debug(f"{side_name} max density spiral: full substrate utilization, "
+                        f"{max_possible_passes} max passes, step_size={step_size:.3f}\", "
+                        f"segment_length={segment_length:.3f}\", start=({center_x:.2f}, {center_y:.2f})")
+
+            meander_pass = 0
+            horizontal_direction = 1
+
+            # Fill the substrate completely in a dense meander pattern
+            # Continue until we've generated sufficient length or hit maximum passes
+            while (current_length < target_length * 1.2) and (meander_pass < max_possible_passes):
+                # Check if we've reached substrate bounds
+                if abs(current_y) >= max_y:
+                    logger.debug(f"{side_name} reached substrate boundary at y={current_y:.3f}, stopping")
+                    break
+
+                # Horizontal segment - use full available width per pass
+                segment_end_x = current_x + horizontal_direction * segment_length
+
+                # Clamp to substrate horizontal bounds
+                if abs(segment_end_x) > max_x:
+                    segment_end_x = max_x if horizontal_direction > 0 else -max_x
+
+                segment_length_actual = abs(segment_end_x - current_x)
+
+                # Always create horizontal segment if meaningful
+                if segment_length_actual > 0.001:
+                    geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 "
+                                   f"{segment_end_x:.4f} {current_y:.4f} 0 {trace_width:.4f}")
+                    gw_tag += 1
+                    current_length += segment_length_actual
+
+                current_x = segment_end_x
+
+                # Add vertical segment to fill more height
+                # Use preferred direction but switch if needed to stay within bounds
+                if direction == 'up':
+                    preferred_next_y = current_y + step_size
+                    # Switch to down if we'd exceed bounds
+                    if preferred_next_y > max_y:
+                        preferred_next_y = current_y - step_size
+                else:
+                    preferred_next_y = current_y - step_size
+                    # Switch to up if we'd exceed bounds
+                    if preferred_next_y < -max_y:
+                        preferred_next_y = current_y + step_size
+
+                # Only add vertical segment if within substrate bounds
+                if abs(preferred_next_y) <= max_y:
+                    segment_length_vertical = abs(preferred_next_y - current_y)
+
+                    if segment_length_vertical > 0.001:
+                        geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 "
+                                       f"{current_x:.4f} {preferred_next_y:.4f} 0 {trace_width:.4f}")
+                        gw_tag += 1
+                        current_length += segment_length_vertical
+                        current_y = preferred_next_y
+                        horizontal_direction *= -1  # Reverse direction for next pass
+                    else:
+                        logger.debug(f"{side_name} cannot move vertically at pass {meander_pass}, stopping")
+                        break
+                else:
+                    logger.debug(f"{side_name} vertical move would exceed substrate at pass {meander_pass}, stopping")
+                    break
+
+                meander_pass += 1
+
+                # Emergency break for runaway generation (shouldn't normally hit this)
+                if meander_pass >= max_possible_passes:
+                    logger.warning(f"{side_name} reached maximum passes ({max_possible_passes}) at length {current_length:.2f}\"")
+                    break
+
+            # Calculate final utilization metrics (across entire substrate)
+            final_y_span = abs(current_y - center_y)*2 + step_size  # Actual span used
+            height_utilization = min(100.0, (final_y_span / available_height) * 100)
+            width_utilization = min(100.0, (segment_length / (max_x * 2)) * 100)
+            overall_utilization = (height_utilization + width_utilization) / 2
+
+            logger.info(f"{side_name} max density spiral: {len(geometry)} segments, "
+                       f"length={current_length:.2f}\" ({current_length/target_length*100:.1f}% of target), "
+                       f"passes={meander_pass}, height_util={height_utilization:.1f}%, "
+                       f"width_util={width_utilization:.1f}%, overall={overall_utilization:.1f}%")
+
+            return geometry, gw_tag
+
+        except Exception as e:
+            logger.error(f"Max density spiral generation failed for {side_name}: {str(e)}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return [], start_tag

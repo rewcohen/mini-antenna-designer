@@ -104,7 +104,7 @@ class ManufacturingRules:
     """Define laser etching manufacturability rules."""
 
     @staticmethod
-    def check_trace_width(width: float) -> Dict[str, Any]:
+    def check_trace_width(width: float, context: str = "") -> Dict[str, Any]:
         """Check if trace width is manufacturable."""
         min_width = 0.005  # 5 mil
         optimal_width = 0.010  # 10 mil
@@ -119,16 +119,19 @@ class ManufacturingRules:
 
         if width < min_width:
             result['is_manufacturable'] = False
-            result['warnings'].append(f"Trace width {width*1000:.1f} mil below minimum {min_width*1000:.1f} mil")
+            result['warnings'].append(f"Trace width {width*1000:.1f} mil below minimum {min_width*1000:.1f} mil" + (f" ({context})" if context else ""))
             result['recommendations'].append("Increase trace width for reliability")
 
         elif width < optimal_width:
             result['quality_rating'] = 'acceptable'
-            result['warnings'].append(f"Trace width {width*1000:.1f} mil is narrow, etching may be challenging")
+            result['warnings'].append(f"Trace width {width*1000:.1f} mil is narrow, etching may be challenging" + (f" ({context})" if context else ""))
 
         elif width > max_width:
             result['quality_rating'] = 'acceptable'
-            result['warnings'].append(f"Trace width {width*1000:.1f} mil is very wide, consider reducing")
+            result['warnings'].append(f"Trace width {width*1000:.1f} mil is very wide, consider reducing" + (f" ({context})" if context else ""))
+
+        if result['quality_rating'] == 'good':
+            result['warnings'].append(f"Trace width {width*1000:.1f} mil - Good for manufacturing")
 
         return result
 
