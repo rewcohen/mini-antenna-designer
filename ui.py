@@ -7,6 +7,7 @@ import time
 from typing import Optional, Dict, Any
 import base64
 from io import BytesIO
+import os
 try:
     from PIL import Image, ImageTk
     from svglib.svglib import svg2rlg
@@ -55,6 +56,14 @@ class AntennaDesignerGUI:
         self.trace_width_var = DoubleVar(value=10.0)
         self.trace_width_label_var = StringVar(value="10.0 mil - Good")
 
+        # Chart zoom/pan variables
+        self.chart_zoom_level = 1.0
+        self.chart_pan_x = 0
+        self.chart_pan_y = 0
+        self.chart_image_path = None
+        self.chart_original_image = None
+        self.chart_current_photo = None
+
         # Create GUI components
         self._create_menu()
         self._create_main_layout()
@@ -102,28 +111,56 @@ class AntennaDesignerGUI:
 
     def _create_main_layout(self):
         """Create the main GUI layout with tabs."""
-        notebook = ttk.Notebook(self.root)
-        notebook.pack(fill='both', expand=True, padx=5, pady=5)
+        self.notebook = ttk.Notebook(self.root)
+        self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
 
         # Design tab
-        design_frame = ttk.Frame(notebook)
-        notebook.add(design_frame, text='Design')
+        design_frame = ttk.Frame(self.notebook)
+        self.notebook.add(design_frame, text='Design')
         self._create_design_tab(design_frame)
 
         # Results tab
-        results_frame = ttk.Frame(notebook)
-        notebook.add(results_frame, text='Results')
+        results_frame = ttk.Frame(self.notebook)
+        self.notebook.add(results_frame, text='Results')
         self._create_results_tab(results_frame)
 
+        # Band Analysis tab
+        analysis_frame = ttk.Frame(self.notebook)
+        self.notebook.add(analysis_frame, text='Band Analysis')
+        self._create_analysis_tab(analysis_frame)
+
         # Export tab
-        export_frame = ttk.Frame(notebook)
-        notebook.add(export_frame, text='Export')
+        export_frame = ttk.Frame(self.notebook)
+        self.notebook.add(export_frame, text='Export')
         self._create_export_tab(export_frame)
 
         # My Designs tab
-        designs_frame = ttk.Frame(notebook)
-        notebook.add(designs_frame, text='My Designs')
+        designs_frame = ttk.Frame(self.notebook)
+        self.notebook.add(designs_frame, text='My Designs')
         self._create_designs_tab(designs_frame)
+
+        # Bind tab change event for auto-calculation
+        self.notebook.bind('<<NotebookTabChanged>>', self._on_tab_changed)
+
+    def _on_tab_changed(self, event=None):
+        """Handle tab change events for auto-calculation features."""
+        try:
+            # Get the currently selected tab
+            current_tab = self.notebook.select()
+            tab_text = self.notebook.tab(current_tab, "text")
+
+            if tab_text == "Band Analysis":
+                # Check if we have a current design and automatically generate analysis
+                if self.current_results and self.current_geometry:
+                    self._log_message("Auto-calculating band analysis for current design...")
+                    self._generate_band_chart()
+                else:
+                    # Clear the chart area if no design is loaded
+                    self._clear_chart_display()
+                    self._log_message("Band Analysis tab selected - no current design available")
+
+        except Exception as e:
+            logger.error(f"Error handling tab change: {str(e)}")
 
     def _create_design_tab(self, parent):
         """Create the antenna design tab."""
@@ -237,6 +274,73 @@ class AntennaDesignerGUI:
             indicator.grid(row=0, column=i*2+1, padx=5, pady=2)
             self.status_indicators[metric] = indicator
 
+    def _create_analysis_tab(self, parent):
+        """Create the band analysis tab for visualizing frequency bands and lengths."""
+        # Controls
+        control_frame = ttk.LabelFrame(parent, text="Band Analysis Controls")
+        control_frame.pack(fill='x', padx=5, pady=5)
+
+        # Generate chart button
+        ttk.Button(control_frame, text="Generate Band Analysis Chart",
+                  command=self._generate_band_chart).pack(side=LEFT, padx=5, pady=5)
+
+        # Export chart button
+        ttk.Button(control_frame, text="Export Chart",
+                  command=self._export_band_chart).pack(side=LEFT, padx=5, pady=5)
+
+        # Zoom controls
+        zoom_frame = ttk.Frame(control_frame)
+        zoom_frame.pack(side=RIGHT, padx=5, pady=5)
+
+        ttk.Button(zoom_frame, text="Zoom In +", command=self._chart_zoom_in).pack(side=LEFT, padx=2)
+        ttk.Button(zoom_frame, text="Zoom Out -", command=self._chart_zoom_out).pack(side=LEFT, padx=2)
+        ttk.Button(zoom_frame, text="Fit to View", command=self._chart_fit_to_view).pack(side=LEFT, padx=2)
+
+        # Zoom level display
+        self.zoom_level_var = StringVar(value="100%")
+        zoom_label = ttk.Label(zoom_frame, textvariable=self.zoom_level_var, width=10)
+        zoom_label.pack(side=LEFT, padx=5)
+
+        # Analysis options
+        options_frame = ttk.Frame(control_frame)
+        options_frame.pack(side=RIGHT, padx=5, pady=5)
+
+        ttk.Label(options_frame, text="Analysis Type:").pack(side=LEFT)
+        self.analysis_type_var = StringVar(value="comparison")
+        analysis_combo = ttk.Combobox(options_frame, textvariable=self.analysis_type_var,
+                                     values=["comparison", "detailed"], state="readonly", width=12)
+        analysis_combo.pack(side=LEFT, padx=5)
+        analysis_combo.bind('<<ComboboxSelected>>', self._on_analysis_type_changed)
+
+        # Chart display area
+        chart_frame = ttk.LabelFrame(parent, text="Band Analysis Chart")
+        chart_frame.pack(fill='both', expand=True, padx=5, pady=5)
+
+        # Use a canvas for matplotlib integration
+        self.chart_canvas = None
+        self.chart_container = ttk.Frame(chart_frame)
+        self.chart_container.pack(fill='both', expand=True, padx=5, pady=5)
+
+        # Instructions area
+        instructions_frame = ttk.LabelFrame(parent, text="Instructions")
+        instructions_frame.pack(fill='x', padx=5, pady=(0, 5))
+
+        instructions_text = """Band Analysis Chart Instructions:
+
+• Click "Generate Band Analysis Chart" to create a comprehensive chart showing all predefined frequency bands
+• The chart displays both theoretical electrical antenna lengths and actual meandered trace lengths needed within the substrate constraints
+• "Theoretical" lengths are the quarter/half/full wavelength antenna dimensions in free space
+• "Actual" trace lengths are the meandered lengths that achieve those electrical lengths while fitting in the 2x4 inch substrate
+• The meandering ratio shows how much longer the trace is compared to a straight-line antenna
+• Use the dropdown to switch between comparison chart (all bands) and detailed chart (per-band analysis)
+
+This chart helps you understand how the antenna design system enables compact, high-performance antennas by fitting electrically long designs in small substrates using advanced meandering techniques."""
+
+        instructions_label = ScrolledText(instructions_frame, height=12, wrap=WORD)
+        instructions_label.insert(END, instructions_text)
+        instructions_label.config(state=DISABLED)  # Make it read-only
+        instructions_label.pack(fill='both', expand=True, padx=5, pady=5)
+
     def _create_export_tab(self, parent):
         """Create the export tab."""
         # Export options
@@ -318,31 +422,64 @@ class AntennaDesignerGUI:
     def _analyze_selected_band(self):
         """Analyze the selected frequency band."""
         try:
-            selection = self.band_combo.get().split(' - ')[0]  # Get just the name
-            bands = BandPresets.get_all_bands()
+            # Get the selected display name from combo box
+            selected_display = self.band_combo.get()
 
-            selected_band = None
-            for band in bands.values():
-                if band.name == selection:
-                    selected_band = band
-                    break
+            if not selected_display:
+                self._show_error("No band selected")
+                return
 
-            if not selected_band:
+            # Find the band key using the existing band_map
+            if selected_display not in self.band_map:
                 self._show_error("Band not found")
                 return
 
-            self.selected_band_key = None
-            for key, band in bands.items():
-                if band.name == selection:
-                    self.selected_band_key = key
-                    break
+            band_key = self.band_map[selected_display]
+            bands = BandPresets.get_all_bands()
 
-            # Show analysis
+            if band_key not in bands:
+                self._show_error("Band data not available")
+                return
+
+            selected_band = bands[band_key]
+            self.selected_band_key = band_key
+
+            # Show analysis using current substrate size
             from presets import BandAnalysis
             try:
-                analysis = BandAnalysis.analyze_band_compatibility(selected_band)
+                # Get current substrate dimensions
+                substrate_width = float(self.substrate_width_var.get())
+                substrate_height = float(self.substrate_height_var.get())
+
+                analysis = BandAnalysis.analyze_band_compatibility(
+                    selected_band, substrate_width, substrate_height
+                )
+
+                # Log the analysis for debugging
+                logger.info(f"Band analysis for '{selected_band.name}': feasibility={analysis['feasibility_score']:.1f}, "
+                           f"complexity={analysis['design_complexity']}, constraints={analysis['size_constraints']}")
+
+                # Format analysis message
+                info_msg = f"""Band Analysis: {selected_band.name}
+Description: {selected_band.description}
+Frequencies: {selected_band.frequencies[0]}/{selected_band.frequencies[1]}/{selected_band.frequencies[2]} MHz
+
+Feasibility Score: {analysis['feasibility_score']:.1f}/10
+Design Complexity: {analysis['design_complexity']}
+Size Constraints: {analysis['size_constraints']}
+
+Recommended Antennas: {', '.join(analysis['recommended_antenna_types'][:3])}
+
+Warnings:
+{chr(10).join('- ' + w for w in analysis['warnings'])}
+
+Notes:
+{chr(10).join('- ' + n for n in analysis['optimization_notes'][:3])}
+"""
+                messagebox.showinfo("Band Analysis", info_msg)
+
             except Exception as e:
-                logger.error(f"Band analysis failed: {str(e)}")
+                logger.error(f"Band analysis processing failed: {str(e)}")
                 # Provide fallback analysis
                 analysis = {
                     'feasibility_score': 5,
@@ -353,7 +490,7 @@ class AntennaDesignerGUI:
                     'optimization_notes': ['Try generating design directly']
                 }
 
-            info_msg = f"""Band Analysis: {selected_band.name}
+                info_msg = f"""Band Analysis: {selected_band.name}
 Description: {selected_band.description}
 Frequencies: {selected_band.frequencies[0]}/{selected_band.frequencies[1]}/{selected_band.frequencies[2]} MHz
 
@@ -367,11 +504,12 @@ Warnings:
 {chr(10).join('- ' + w for w in analysis['warnings'])}
 
 Notes:
-{chr(10).join('- ' + n for n in analysis['optimization_notes'][:3])}
-"""
-            messagebox.showinfo("Band Analysis", info_msg)
+{chr(10).join('- ' + n for n in analysis['optimization_notes'][:3])}"""
+
+                messagebox.showinfo("Band Analysis", info_msg)
 
         except Exception as e:
+            logger.error(f"Band analysis failed: {str(e)}")
             self._show_error(f"Error analyzing band: {str(e)}")
 
     def _use_custom_frequencies(self):
@@ -1632,6 +1770,389 @@ Click OK to continue with an empty design library.
             messagebox.showwarning("Design Library Warning", error_info)
         except Exception as e:
             logger.error(f"Failed to show design storage error dialog: {str(e)}")
+
+    def _generate_band_chart(self):
+        """Generate and display the band analysis chart for current working frequencies."""
+        try:
+            self._log_message("Generating band analysis chart...")
+            self.status_var.set("Generating band analysis chart...")
+
+            # Get current substrate dimensions
+            substrate_width = float(self.substrate_width_var.get())
+            substrate_height = float(self.substrate_height_var.get())
+
+            # Import the chart module here to avoid circular imports
+            from band_chart import BandAnalysisChart
+            from presets import BandPresets
+
+            # Create chart analyzer
+            chart = BandAnalysisChart(substrate_width, substrate_height)
+
+            # Get current working frequencies for chart
+            custom_bands = {}
+
+            # Try to get frequencies from current results first (if design has been generated)
+            if self.current_results and 'freq1_mhz' in self.current_results:
+                # Extract frequencies from current design results
+                freq1 = self.current_results.get('freq1_mhz', 0)
+                freq2 = self.current_results.get('freq2_mhz', 0)
+                freq3 = self.current_results.get('freq3_mhz', 0)
+
+                # Create custom band from current working frequencies
+                current_band_name = f"Current: {freq1}/{freq2}/{freq3} MHz"
+                if freq1 > 0:
+                    frequencies = [freq1]
+                    if freq2 > 0: frequencies.append(freq2)
+                    if freq3 > 0: frequencies.append(freq3)
+
+                    # Create FrequencyBand object
+                    from presets import FrequencyBand, BandType
+                    custom_band = FrequencyBand(
+                        name=current_band_name,
+                        band_type=BandType.CUSTOM,
+                        frequencies_mhz=(freq1, freq2, freq3),
+                        description="Current working frequencies",
+                        applications=["Current design frequencies"]
+                    )
+                    custom_bands[current_band_name] = custom_band
+
+                    self._log_message(f"Creating chart for current design: {freq1}/{freq2}/{freq3} MHz")
+                else:
+                    self._log_message("No valid frequencies in current design, falling back to all bands")
+
+            # If no current results or invalid frequencies, try to get from UI inputs
+            if not custom_bands:
+                try:
+                    freq1 = float(self.freq1_var.get())
+                    freq2 = float(self.freq2_var.get())
+                    freq3 = float(self.freq3_var.get())
+
+                    if freq1 > 0:
+                        current_band_name = f"UI Frequencies: {freq1}/{freq2}/{freq3} MHz"
+                        frequencies = [freq1]
+                        if freq2 > 0: frequencies.append(freq2)
+                        if freq3 > 0: frequencies.append(freq3)
+
+                        # Create FrequencyBand object with correct parameter names
+                        from presets import FrequencyBand, BandType
+                        try:
+                            custom_band = FrequencyBand(
+                                name=current_band_name,
+                                band_type=BandType.CUSTOM,
+                                frequencies_mhz=(freq1, freq2, freq3),
+                                description="Frequencies from UI inputs",
+                                applications=["Custom frequencies from UI"]
+                            )
+                            custom_bands[current_band_name] = custom_band
+                            self._log_message(f"Creating chart for UI frequencies: {freq1}/{freq2}/{freq3} MHz")
+                        except Exception as e:
+                            logger.error(f"Failed to create FrequencyBand object: {str(e)}")
+                            self._show_error("Failed to create frequency band configuration")
+                            custom_bands = None
+                    else:
+                        # Fall back to all bands if no custom frequencies available
+                        self._log_message("No custom frequencies available, showing all bands")
+                        custom_bands = None
+
+                except (ValueError, TypeError) as e:
+                    logger.warning(f"Could not parse frequencies from UI: {e}")
+                    self._log_message("Invalid frequency values entered - using standard band charts")
+                    custom_bands = None
+
+            # Determine which type of chart to generate
+            analysis_type = self.analysis_type_var.get()
+
+            if analysis_type == "detailed":
+                # Generate detailed chart for a specific band
+                if custom_bands and len(custom_bands) == 1:
+                    band_name = list(custom_bands.keys())[0]
+                    chart_path = chart.create_detailed_band_chart(band_name, "band_analysis_detailed.png")
+                else:
+                    # Fallback to first available band
+                    all_bands = BandPresets.get_all_bands()
+                    if all_bands:
+                        first_band_key = list(all_bands.keys())[0]
+                        chart_path = chart.create_detailed_band_chart(first_band_key, "band_analysis_detailed.png")
+                    else:
+                        self._show_error("No frequency bands available for detailed analysis")
+                        return
+            else:
+                # Generate custom comparison chart (focused on current frequencies)
+                if custom_bands:
+                    chart_path = chart.create_custom_comparison_chart(custom_bands, "band_analysis.png")
+                else:
+                    # Fallback to showing all bands
+                    chart_path = chart.create_comparison_chart("band_analysis.png")
+
+            if chart_path and os.path.exists(chart_path):
+                # Display the chart in the UI using matplotlib embedded in tkinter
+                self._display_matplotlib_chart(chart_path)
+                self._log_message(f"Band analysis chart generated: {chart_path}")
+                self.status_var.set(f"Chart generated: {chart_path}")
+            else:
+                self._show_error("Failed to generate band analysis chart")
+
+        except Exception as e:
+            logger.error(f"Error generating band chart: {str(e)}")
+            self._show_error(f"Failed to generate band analysis chart: {str(e)}")
+            self.status_var.set("Chart generation failed")
+
+    def _display_matplotlib_chart(self, chart_path):
+        """Display a matplotlib chart in the tkinter canvas."""
+        try:
+            # Clear existing chart
+            for widget in self.chart_container.winfo_children():
+                widget.destroy()
+
+            # Try to display the image using PIL
+            if PIL_AVAILABLE:
+                from PIL import Image, ImageTk
+
+                # Store chart path and load original image
+                self.chart_image_path = chart_path
+                self.chart_original_image = Image.open(chart_path)
+
+                # Reset zoom and pan for new chart
+                self.chart_zoom_level = 1.0
+                self.chart_pan_x = 0
+                self.chart_pan_y = 0
+                self.zoom_level_var.set("100%")
+
+                # Create a canvas with scrollbars for the chart
+                v_scrollbar = ttk.Scrollbar(self.chart_container, orient='vertical')
+                h_scrollbar = ttk.Scrollbar(self.chart_container, orient='horizontal')
+
+                height = self.chart_container.winfo_height()
+                if height <= 1:
+                    height = 600  # Default height
+
+                self.chart_canvas = Canvas(self.chart_container,
+                                          yscrollcommand=v_scrollbar.set,
+                                          xscrollcommand=h_scrollbar.set,
+                                          height=height)
+
+                v_scrollbar.config(command=self.chart_canvas.yview)
+                h_scrollbar.config(command=self.chart_canvas.xview)
+
+                # Bind mouse events for panning
+                self.chart_canvas.bind('<Button-1>', self._on_chart_mouse_down)
+                self.chart_canvas.bind('<B1-Motion>', self._on_chart_mouse_drag)
+                self.chart_canvas.bind('<MouseWheel>', self._on_chart_mouse_wheel)
+                self.chart_canvas.bind('<Button-4>', self._on_chart_mouse_wheel)  # Linux scroll up
+                self.chart_canvas.bind('<Button-5>', self._on_chart_mouse_wheel)  # Linux scroll down
+
+                # Pack scrollbars and canvas
+                v_scrollbar.pack(side='right', fill='y')
+                h_scrollbar.pack(side='bottom', fill='x')
+                self.chart_canvas.pack(side='left', fill='both', expand=True)
+
+                # Initial display
+                self._update_chart_display()
+
+            else:
+                # Fallback: just show the file path
+                path_label = ttk.Label(self.chart_container,
+                                     text=f"Chart generated successfully:\n{chart_path}\n\nPIL not available for display",
+                                     font=('Arial', 10))
+                path_label.pack(pady=20)
+
+        except Exception as e:
+            logger.error(f"Error displaying chart: {str(e)}")
+            # Fallback: show file path
+            try:
+                fallback_label = ttk.Label(self.chart_container,
+                                         text=f"Chart generated but display failed:\n{chart_path}\nError: {str(e)}")
+                fallback_label.pack(pady=20)
+            except Exception:
+                pass  # Can't even show error
+
+    def _export_band_chart(self):
+        """Export the current band analysis chart."""
+        try:
+            from tkinter import filedialog
+            import os
+
+            # Ask user for export location and format
+            file_types = [
+                ("PNG files", "*.png"),
+                ("PDF files", "*.pdf"),
+                ("SVG files", "*.svg"),
+                ("All files", "*.*")
+            ]
+
+            export_path = filedialog.asksaveasfilename(
+                title="Export Band Analysis Chart",
+                defaultextension=".png",
+                filetypes=file_types
+            )
+
+            if not export_path:
+                return  # User cancelled
+
+            # Get the current chart file path (assuming default location)
+            current_chart = "band_analysis.png"
+            if not os.path.exists(current_chart):
+                self._show_error("No chart available to export. Generate a chart first.")
+                return
+
+            # Copy the file to the desired location
+            import shutil
+            shutil.copy2(current_chart, export_path)
+
+            self._log_message(f"Band chart exported to: {export_path}")
+            self.status_var.set(f"Chart exported: {export_path}")
+
+            messagebox.showinfo("Export Complete", f"Band analysis chart exported successfully to:\n{export_path}")
+
+        except Exception as e:
+            logger.error(f"Error exporting band chart: {str(e)}")
+            self._show_error(f"Failed to export chart: {str(e)}")
+
+    def _clear_chart_display(self):
+        """Clear the chart display area."""
+        try:
+            # Clear existing chart content
+            for widget in self.chart_container.winfo_children():
+                widget.destroy()
+
+            # Show placeholder message
+            placeholder_label = ttk.Label(
+                self.chart_container,
+                text="No current design available.\n\nGenerate a design to automatically see its band analysis chart here,\nor click 'Generate Band Analysis Chart' to view analysis of all frequency bands.",
+                font=('Arial', 10),
+                justify='center'
+            )
+            placeholder_label.pack(expand=True, pady=50)
+
+        except Exception as e:
+            logger.error(f"Error clearing chart display: {str(e)}")
+
+    def _chart_zoom_in(self):
+        """Zoom in on the chart."""
+        if self.chart_zoom_level < 5.0:  # Maximum zoom 500%
+            self.chart_zoom_level *= 1.2
+            self._update_chart_display()
+            self.zoom_level_var.set(f"{self.chart_zoom_level*100:.0f}%")
+
+    def _chart_zoom_out(self):
+        """Zoom out on the chart."""
+        if self.chart_zoom_level > 0.2:  # Minimum zoom 20%
+            self.chart_zoom_level /= 1.2
+            self._update_chart_display()
+            self.zoom_level_var.set(f"{self.chart_zoom_level*100:.0f}%")
+
+    def _chart_fit_to_view(self):
+        """Fit the chart to the view by resetting zoom and pan."""
+        self.chart_zoom_level = 1.0
+        self.chart_pan_x = 0
+        self.chart_pan_y = 0
+        self._update_chart_display()
+        self.zoom_level_var.set(f"{self.chart_zoom_level*100:.0f}%")
+
+    def _update_chart_display(self):
+        """Update the chart display with current zoom and pan settings."""
+        if not self.chart_image_path or not os.path.exists(self.chart_image_path):
+            return
+
+        try:
+            if not PIL_AVAILABLE:
+                return
+
+            from PIL import Image, ImageTk
+
+            # Load the original image
+            if not self.chart_original_image:
+                self.chart_original_image = Image.open(self.chart_image_path)
+
+            # Apply zoom
+            zoomed_width = int(self.chart_original_image.width * self.chart_zoom_level)
+            zoomed_height = int(self.chart_original_image.height * self.chart_zoom_level)
+
+            if zoomed_width <= 0 or zoomed_height <= 0:
+                return
+
+            zoomed_image = self.chart_original_image.resize((zoomed_width, zoomed_height), Image.LANCZOS)
+
+            # Apply pan (crop the image to show only the visible portion)
+            container_width = self.chart_container.winfo_width()
+            container_height = self.chart_container.winfo_height()
+
+            if container_width <= 0 or container_height <= 0:
+                container_width, container_height = 800, 600  # Default fallback
+
+            # Calculate visible region
+            left = max(0, self.chart_pan_x)
+            top = max(0, self.chart_pan_y)
+            right = min(zoomed_width, left + container_width)
+            bottom = min(zoomed_height, top + container_height)
+
+            # Create cropped image
+            if right > left and bottom > top:
+                cropped_image = zoomed_image.crop((left, top, right, bottom))
+
+                # Convert to PhotoImage
+                photo = ImageTk.PhotoImage(cropped_image)
+
+                # Clear existing canvas content
+                if hasattr(self, 'chart_canvas') and self.chart_canvas:
+                    self.chart_canvas.delete("all")
+
+                    # Update canvas
+                    self.chart_canvas.config(
+                        scrollregion=(0, 0, zoomed_width, zoomed_height),
+                        width=min(container_width, zoomed_width),
+                        height=min(container_height, zoomed_height)
+                    )
+
+                    # Redraw image
+                    self.chart_canvas.create_image(0, 0, anchor='nw', image=photo)
+
+                    # Store reference
+                    self.chart_canvas.image = photo
+                    self.chart_current_photo = photo
+
+        except Exception as e:
+            logger.error(f"Error updating chart display: {str(e)}")
+
+    def _on_chart_mouse_down(self, event):
+        """Handle mouse button down for panning."""
+        self.chart_drag_start_x = event.x_root
+        self.chart_drag_start_y = event.y_root
+        self.chart_pan_start_x = self.chart_pan_x
+        self.chart_pan_start_y = self.chart_pan_y
+
+    def _on_chart_mouse_drag(self, event):
+        """Handle mouse drag for panning."""
+        dx = event.x_root - self.chart_drag_start_x
+        dy = event.y_root - self.chart_drag_start_y
+
+        # Apply panning (invert direction for natural feel)
+        self.chart_pan_x = self.chart_pan_start_x - dx
+        self.chart_pan_y = self.chart_pan_start_y - dy
+
+        # Clamp pan to valid range
+        max_pan_x = max(0, int(self.chart_original_image.width * self.chart_zoom_level - self.chart_container.winfo_width()))
+        max_pan_y = max(0, int(self.chart_original_image.height * self.chart_zoom_level - self.chart_container.winfo_height()))
+        self.chart_pan_x = max(0, min(self.chart_pan_x, max_pan_x))
+        self.chart_pan_y = max(0, min(self.chart_pan_y, max_pan_y))
+
+        self._update_chart_display()
+
+    def _on_chart_mouse_wheel(self, event):
+        """Handle mouse wheel for zooming."""
+        # Get delta for cross-platform compatibility
+        if event.num == 4 or event.delta > 0:  # Scroll up
+            self._chart_zoom_in()
+        elif event.num == 5 or event.delta < 0:  # Scroll down
+            self._chart_zoom_out()
+
+    def _on_analysis_type_changed(self, event=None):
+        """Handle analysis type dropdown change."""
+        analysis_type = self.analysis_type_var.get()
+        if analysis_type == "detailed":
+            self._log_message("Switched to detailed band analysis mode")
+        else:
+            self._log_message("Switched to comparison band analysis mode")
 
 
 def test_storage():

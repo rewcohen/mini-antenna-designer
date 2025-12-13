@@ -1,23 +1,25 @@
-2025-12-12 19:14:50.138 | INFO     | presets:<module>:354 - Frequency band presets initialized with comprehensive band definitions
-2025-12-12 19:14:50.558 | INFO     | storage:<module>:509 - Design storage system initialized with thumbnail generation and JSON serialization
-2025-12-12 19:14:50.559 | INFO     | __main__:main:11 - Starting Mini Antenna Designer application
-2025-12-12 19:14:50.601 | WARNING  | core:__init__:52 - NEC2 executable not found: NEC2 executable not found. Please specify nec2_path or install NEC2. - using mock simulation mode
-2025-12-12 19:14:50.602 | INFO     | design:__init__:21 - Antenna design initialized for 4.0x2.0 inch substrate
-2025-12-12 19:14:50.603 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
-2025-12-12 19:14:50.603 | INFO     | design_generator:__init__:21 - Antenna design generator initialized with advanced meander capability for 4.0x2.0 inch substrate
-2025-12-12 19:14:50.603 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
-2025-12-12 19:14:50.604 | INFO     | storage:__init__:129 - Design storage directory created/verified: C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:14:50.604 | INFO     | storage:__init__:142 - Storage directory is writable
-2025-12-12 19:14:50.605 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
-2025-12-12 19:14:50.605 | INFO     | storage:__init__:150 - Design storage initialized at: C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:14:50.647 | INFO     | ui:_create_designs_tab:1007 - Successfully created paned window for designs tab
-2025-12-12 19:14:50.655 | INFO     | ui:_create_designs_tab:1096 - GUI creation complete, scheduling design library initialization...
-2025-12-12 19:14:50.656 | INFO     | ui:__init__:57 - GUI initialized
-2025-12-12 19:14:50.762 | INFO     | ui:_delayed_initial_refresh:1536 - Performing delayed design library initialization...
-2025-12-12 19:14:50.763 | INFO     | storage:list_designs:286 - Listed 2 designs from C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:14:50.764 | INFO     | ui:_refresh_designs_list:1194 - Storage returned 2 designs
-2025-12-12 19:14:50.764 | INFO     | ui:_refresh_designs_list:1226 - Treeview insertion complete: 2 successful, 0 failed
-2025-12-12 19:14:50.765 | INFO     | storage:list_designs:286 - Listed 2 designs from C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:14:50.765 | INFO     | storage:get_design_stats:383 - Generated stats for 2 designs
-2025-12-12 19:14:50.766 | INFO     | ui:_refresh_designs_list:1247 - Design list refresh completed successfully
-2025-12-12 19:14:50.766 | INFO     | ui:_delayed_initial_refresh:1539 - Design library loaded successfully
+2025-12-12 20:17:43.683 | INFO     | presets:<module>:382 - Frequency band presets initialized with comprehensive band definitions
+2025-12-12 20:17:43.684 | INFO     | constraints:<module>:385 - Substrate and manufacturing constraints initialized
+2025-12-12 20:17:43.817 | INFO     | storage:<module>:509 - Design storage system initialized with thumbnail generation and JSON serialization
+2025-12-12 20:17:43.818 | INFO     | __main__:run_validation:33 - ✓ All modules imported successfully
+2025-12-12 20:17:43.818 | INFO     | __main__:run_validation:39 - Testing NEC2 interface initialization...
+2025-12-12 20:17:43.818 | WARNING  | core:__init__:60 - NEC2 executable not found: NEC2 executable not found. Please specify nec2_path or install NEC2. - using mock simulation mode
+2025-12-12 20:17:43.819 | INFO     | __main__:run_validation:43 - ✓ NEC2 interface initialized (mock mode)
+2025-12-12 20:17:43.819 | INFO     | __main__:run_validation:49 - Testing antenna geometry generation...
+2025-12-12 20:17:43.819 | INFO     | design:__init__:21 - Antenna design initialized for 4.0x2.0 inch substrate
+2025-12-12 20:17:43.819 | INFO     | design:generate_dipole:49 - Using straight dipole for 2450 MHz (length: 2.288)
+2025-12-12 20:17:43.819 | INFO     | design:generate_dipole:52 - Generated dipole antenna for 2450 MHz: 1 wire segments
+2025-12-12 20:17:43.819 | WARNING  | design:generate_monopole:233 - Reduced monopole length for substrate: 1.600 inches
+2025-12-12 20:17:43.820 | INFO     | design:generate_monopole:253 - Generated monopole antenna: 1.600 inches for 880 MHz
+2025-12-12 20:17:43.820 | INFO     | design:generate_spiral_coil:310 - Generated 3-turn spiral coil for 1575 MHz
+2025-12-12 20:17:43.820 | INFO     | __main__:run_validation:62 - ✓ Antenna geometry generation working
+2025-12-12 20:17:43.820 | INFO     | __main__:run_validation:67 - Testing frequency band presets...
+2025-12-12 20:17:43.821 | INFO     | __main__:run_validation:87 - ✓ Frequency presets working (11 bands available)
+2025-12-12 20:17:43.821 | INFO     | __main__:run_validation:92 - Testing vector export functionality...
+2025-12-12 20:17:43.821 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
+2025-12-12 20:17:43.822 | INFO     | export:export_geometry:82 - Exported test_validation to SVG format
+2025-12-12 20:17:43.822 | INFO     | __main__:run_validation:105 - ✓ Vector export working
+2025-12-12 20:17:43.823 | INFO     | __main__:run_validation:110 - Testing substrate constraints...
+2025-12-12 20:17:43.823 | INFO     | constraints:__init__:29 - Substrate constraints initialized: 4.0x2.0 inches
+2025-12-12 20:17:43.823 | INFO     | __main__:run_validation:126 - ✓ Substrate constraints working
+2025-12-12 20:17:43.823 | INFO     | __main__:run_validation:136 - Validation complete: 6/6 tests passed

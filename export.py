@@ -259,8 +259,11 @@ class VectorExporter:
 
     def _generate_svg_content(self, wire_segments: List[tuple],
                             metadata: Optional[Dict] = None) -> str:
-        """Generate SVG content for wire segments with professional labeling."""
+        """Generate SVG content for wire segments with professional labeling and trace validation."""
         try:
+            # Validate trace widths before generating SVG
+            trace_validation = self._validate_trace_widths(wire_segments)
+
             # Calculate bounds
             coords = []
             for x1, y1, x2, y2, _ in wire_segments:
@@ -281,7 +284,7 @@ class VectorExporter:
 
             # Add margins for labels
             margin = 0.2  # 0.2 inch margin for labels
-            label_space = 0.5  # 0.5 inch space for labels
+            label_space = 0.8  # Increased space for trace validation info
             width = (max_x - min_x + 2 * margin + label_space) * self.svg_scale
             height = (max_y - min_y + 2 * margin) * self.svg_scale
 
@@ -290,21 +293,32 @@ class VectorExporter:
                 return ((x - min_x + margin) * self.svg_scale,
                        height - ((y - min_y + margin) * self.svg_scale))
 
-            # Generate SVG paths for antenna traces
+            # Generate SVG paths for antenna traces with color coding based on validation
             paths = []
-            for x1, y1, x2, y2, radius in wire_segments:
+            validation_colors = {
+                'good': 'black',
+                'warning': 'orange',
+                'error': 'red'
+            }
+
+            for i, segment in enumerate(wire_segments):
+                x1, y1, x2, y2, radius = segment
                 tx1, ty1 = transform(x1, y1)
                 tx2, ty2 = transform(x2, y2)
                 stroke_width = max(radius * self.svg_scale, 2.0)  # Minimum 2 unit for visibility
 
+                # Get validation status for this trace
+                validation_status = trace_validation['trace_status'][i] if i < len(trace_validation['trace_status']) else 'good'
+                stroke_color = validation_colors.get(validation_status, 'black')
+
                 path = f'M {tx1:.{self.precision}f} {ty1:.{self.precision}f} L {tx2:.{self.precision}f} {ty2:.{self.precision}f}'
-                paths.append(f'<path d="{path}" stroke="black" stroke-width="{stroke_width}" fill="none"/>')
+                paths.append(f'<path d="{path}" stroke="{stroke_color}" stroke-width="{stroke_width}" fill="none"/>')
 
             # Combine all paths
             paths_str = '\n    '.join(paths)
 
-            # Generate professional labels and annotations
-            annotations = self._generate_svg_annotations(wire_segments, transform, total_width, total_height, metadata)
+            # Generate professional labels and annotations including trace validation
+            annotations = self._generate_svg_annotations(wire_segments, transform, total_width, total_height, metadata, trace_validation)
 
             # Generate SVG with professional layout
             svg = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -351,16 +365,89 @@ class VectorExporter:
             logger.error(f"SVG content generation error: {str(e)}")
             return self._get_empty_svg()
 
+    def _validate_trace_widths(self, wire_segments: List[tuple]) -> Dict[str, Any]:
+        """Validate trace widths for manufacturability.
+
+        Args:
+            wire_segments: List of wire segment tuples (x1, y1, x2, y2, radius)
+
+        Returns:
+            dict: Validation results with status per trace and summary
+        """
+        try:
+            validation = {
+                'trace_status': [],  # List of 'good', 'warning', 'error' for each trace
+                'trace_widths_mils': [],
+                'min_trace_width': float('inf'),
+                'max_trace_width': 0,
+                'avg_trace_width': 0,
+                'manufacturing_warnings': [],
+                'manufacturing_errors': [],
+                'overall_status': 'good'
+            }
+
+            trace_widths_mils = []
+
+            for segment in wire_segments:
+                x1, y1, x2, y2, radius = segment
+                trace_width_mils = radius * 1000  # Convert inches to mils
+                trace_widths_mils.append(trace_width_mils)
+
+                # Determine validation status
+                if trace_width_mils < 5.0:
+                    status = 'error'
+                    validation['manufacturing_errors'].append(f"Trace width {trace_width_mils:.1f} mil below absolute minimum (5 mil)")
+                elif trace_width_mils < 8.0:
+                    status = 'warning'
+                    validation['manufacturing_warnings'].append(f"Trace width {trace_width_mils:.1f} mil below recommended minimum (8 mil)")
+                elif trace_width_mils > 50.0:
+                    status = 'warning'
+                    validation['manufacturing_warnings'].append(f"Trace width {trace_width_mils:.1f} mil very thick (may reduce performance)")
+                else:
+                    status = 'good'
+
+                validation['trace_status'].append(status)
+                validation['trace_widths_mils'].append(trace_width_mils)
+
+            # Calculate summary statistics
+            if trace_widths_mils:
+                validation['min_trace_width'] = min(trace_widths_mils)
+                validation['max_trace_width'] = max(trace_widths_mils)
+                validation['avg_trace_width'] = sum(trace_widths_mils) / len(trace_widths_mils)
+
+            # Determine overall status
+            if any(s == 'error' for s in validation['trace_status']):
+                validation['overall_status'] = 'error'
+            elif any(s == 'warning' for s in validation['trace_status']):
+                validation['overall_status'] = 'warning'
+            else:
+                validation['overall_status'] = 'good'
+
+            logger.debug(f"Trace validation: {len(validation['trace_status'])} traces checked, "
+                        f"min={validation['min_trace_width']:.1f}mil, max={validation['max_trace_width']:.1f}mil, "
+                        f"status={validation['overall_status']}")
+
+            return validation
+
+        except Exception as e:
+            logger.error(f"Trace width validation failed: {str(e)}")
+            return {
+                'trace_status': ['error'] * len(wire_segments),
+                'overall_status': 'error',
+                'manufacturing_errors': [f"Validation error: {str(e)}"]
+            }
+
     def _generate_svg_annotations(self, wire_segments: List[tuple], transform_func,
-                               total_width: float, total_height: float, metadata: Optional[Dict] = None) -> str:
-        """Generate professional SVG annotations including dimensions and labels."""
+                               total_width: float, total_height: float, metadata: Optional[Dict] = None,
+                               trace_validation: Optional[Dict] = None) -> str:
+        """Generate professional SVG annotations including dimensions, labels, and trace validation."""
         try:
             annotations = []
 
             # Title and information
             title_x = 20
             title_y = 30
-            annotations.append(f'<text x="{title_x}" y="{title_y}" class="title-text">LOG-PERIODIC TV ANTENNA</text>')
+            annotations.append(f'<text x="{title_x}" y="{title_y}" class="title-text">PROFESSIONAL PCB ANTENNA</text>')
 
             # Frequency information
             band_name = "Unknown"
@@ -374,8 +461,43 @@ class VectorExporter:
                 freq_range = f"{metadata['freq1_mhz']:.0f}-{metadata.get('freq3_mhz', metadata['freq1_mhz']):.0f} MHz"
                 annotations.append(f'<text x="{title_x}" y="{freq_y}" class="subtitle-text">Frequency: {freq_range}</text>')
 
+            # Trace validation information
+            trace_y = title_y + (80 if metadata and ('freq1_mhz' in metadata or 'band_name' in metadata) else 60)
+
+            if trace_validation:
+                annotations.append(f'<text x="{title_x}" y="{trace_y}" class="label-text">TRACE VALIDATION:</text>')
+
+                status_text = trace_validation['overall_status'].upper()
+                status_color = {'good': 'green', 'warning': 'orange', 'error': 'red'}.get(trace_validation['overall_status'], 'black')
+
+                if trace_validation.get('trace_widths_mils'):
+                    avg_width = trace_validation['avg_trace_width']
+                    min_width = trace_validation['min_trace_width']
+                    max_width = trace_validation['max_trace_width']
+                    trace_count = len(trace_validation['trace_widths_mils'])
+
+                    annotations.append(f'<text x="{title_x}" y="{trace_y + 15}" class="dimension-text" fill="{status_color}">Status: {status_text}</text>')
+                    annotations.append(f'<text x="{title_x}" y="{trace_y + 30}" class="dimension-text">Trace Count: {trace_count}</text>')
+                    annotations.append(f'<text x="{title_x}" y="{trace_y + 45}" class="dimension-text">Average Width: {avg_width:.1f} mil</text>')
+                    annotations.append(f'<text x="{title_x}" y="{trace_y + 60}" class="dimension-text">Min/Max Width: {min_width:.1f}/{max_width:.1f} mil</text>')
+
+                    # Show manufacturing warnings/errors
+                    warning_y = trace_y + 80
+                    if trace_validation.get('manufacturing_errors'):
+                        annotations.append(f'<text x="{title_x}" y="{warning_y}" class="dimension-text" fill="red">ERRORS:</text>')
+                        for i, error in enumerate(trace_validation['manufacturing_errors'][:3]):  # Limit to 3
+                            annotations.append(f'<text x="{title_x}" y="{warning_y + 15 + i*15}" class="dimension-text" fill="red">{error}</text>')
+                        warning_y += len(trace_validation['manufacturing_errors']) * 15 + 20
+
+                    if trace_validation.get('manufacturing_warnings'):
+                        annotations.append(f'<text x="{title_x}" y="{warning_y}" class="dimension-text" fill="orange">WARNINGS:</text>')
+                        for i, warning in enumerate(trace_validation['manufacturing_warnings'][:3]):  # Limit to 3
+                            annotations.append(f'<text x="{title_x}" y="{warning_y + 15 + i*15}" class="dimension-text" fill="orange">{warning}</text>')
+            else:
+                annotations.append(f'<text x="{title_x}" y="{trace_y}" class="dimension-text">Trace validation unavailable</text>')
+
             # Overall dimensions
-            dim_y = title_y + 60
+            dim_y = trace_y + 120
             annotations.append(f'<text x="{title_x}" y="{dim_y}" class="label-text">DIMENSIONS:</text>')
             annotations.append(f'<text x="{title_x}" y="{dim_y + 15}" class="dimension-text">Design Width: {total_width:.3f} inches ({total_width*1000:.0f} mils)</text>')
             annotations.append(f'<text x="{title_x}" y="{dim_y + 30}" class="dimension-text">Design Height: {total_height:.3f} inches ({total_height*1000:.0f} mils)</text>')
@@ -383,7 +505,9 @@ class VectorExporter:
             # Manufacturing information
             manuf_y = dim_y + 60
             annotations.append(f'<text x="{title_x}" y="{manuf_y}" class="label-text">MANUFACTURING:</text>')
-            annotations.append(f'<text x="{title_x}" y="{manuf_y + 15}" class="dimension-text">Trace Width: 10-20 mil (laser etching)</text>')
+            annotations.append(f'<text x="{title_x}" y="{manuf_y + 15}" class="dimension-text">Substrate: 2x4" FR-4 PCB (1.6mm thick)</text>')
+            annotations.append(f'<text x="{title_x}" y="{manuf_y + 30}" class="dimension-text">Scale: 1:1 (ready for laser etching)</text>')
+            annotations.append(f'<text x="{title_x}" y="{manuf_y + 45}" class="dimension-text">Export Date: {datetime.now().strftime("%Y-%m-%d %H:%M")}</text>')
 
             # Use configured substrate size from metadata, fallback to calculated size
             substrate_width = total_width

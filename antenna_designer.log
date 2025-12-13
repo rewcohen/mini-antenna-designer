@@ -1,79 +1,105 @@
-2025-12-12 19:17:06.960 | INFO     | presets:<module>:354 - Frequency band presets initialized with comprehensive band definitions
-2025-12-12 19:17:07.459 | INFO     | storage:<module>:509 - Design storage system initialized with thumbnail generation and JSON serialization
-2025-12-12 19:17:07.532 | WARNING  | core:__init__:52 - NEC2 executable not found: NEC2 executable not found. Please specify nec2_path or install NEC2. - using mock simulation mode
-2025-12-12 19:17:07.533 | INFO     | design:__init__:21 - Antenna design initialized for 4.0x2.0 inch substrate
-2025-12-12 19:17:07.534 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
-2025-12-12 19:17:07.535 | INFO     | design_generator:__init__:21 - Antenna design generator initialized with advanced meander capability for 4.0x2.0 inch substrate
-2025-12-12 19:17:07.536 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
-2025-12-12 19:17:07.537 | INFO     | storage:__init__:129 - Design storage directory created/verified: C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:17:07.538 | INFO     | storage:__init__:142 - Storage directory is writable
-2025-12-12 19:17:07.539 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
-2025-12-12 19:17:07.539 | INFO     | storage:__init__:150 - Design storage initialized at: C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:17:07.634 | INFO     | __main__:_create_designs_tab:1018 - Successfully created paned window for designs tab
-2025-12-12 19:17:07.655 | INFO     | __main__:_create_designs_tab:1107 - GUI creation complete, scheduling design library initialization...
-2025-12-12 19:17:07.659 | INFO     | __main__:__init__:68 - GUI initialized
-2025-12-12 19:17:07.771 | INFO     | __main__:_delayed_initial_refresh:1600 - Performing delayed design library initialization...
-2025-12-12 19:17:07.776 | INFO     | storage:list_designs:286 - Listed 2 designs from C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:17:07.777 | INFO     | __main__:_refresh_designs_list:1205 - Storage returned 2 designs
-2025-12-12 19:17:07.779 | INFO     | __main__:_refresh_designs_list:1237 - Treeview insertion complete: 2 successful, 0 failed
-2025-12-12 19:17:07.780 | INFO     | storage:list_designs:286 - Listed 2 designs from C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:17:07.781 | INFO     | storage:get_design_stats:383 - Generated stats for 2 designs
-2025-12-12 19:17:07.782 | INFO     | __main__:_refresh_designs_list:1258 - Design list refresh completed successfully
-2025-12-12 19:17:07.783 | INFO     | __main__:_delayed_initial_refresh:1603 - Design library loaded successfully
-2025-12-12 19:17:12.243 | INFO     | storage:load_design:244 - Loaded design 'test' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_181910_2412_2437_2462_test.json
-2025-12-12 19:17:14.037 | INFO     | storage:load_design:244 - Loaded design 'hh' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_191133_174_200_216_hh.json
-2025-12-12 19:17:16.089 | INFO     | storage:load_design:244 - Loaded design 'test' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_181910_2412_2437_2462_test.json
-2025-12-12 19:17:19.188 | INFO     | storage:load_design:244 - Loaded design 'hh' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_191133_174_200_216_hh.json
-2025-12-12 19:17:21.888 | INFO     | storage:load_design:244 - Loaded design 'test' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_181910_2412_2437_2462_test.json
-2025-12-12 19:17:42.669 | INFO     | design:__init__:21 - Antenna design initialized for 4.0x2.0 inch substrate
-2025-12-12 19:17:42.670 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
-2025-12-12 19:17:42.671 | INFO     | design_generator:__init__:21 - Antenna design generator initialized with advanced meander capability for 4.0x2.0 inch substrate
-2025-12-12 19:17:45.389 | INFO     | design:__init__:21 - Antenna design initialized for 4.0x2.0 inch substrate
-2025-12-12 19:17:45.390 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
-2025-12-12 19:17:45.390 | INFO     | design_generator:__init__:21 - Antenna design generator initialized with advanced meander capability for 4.0x2.0 inch substrate
-2025-12-12 19:17:45.391 | INFO     | design_generator:generate_design:34 - Generating design for TV UHF: 470/650/698 MHz
-2025-12-12 19:17:45.392 | INFO     | design_generator:_determine_design_type:91 - Design type analysis for TV UHF:
-2025-12-12 19:17:45.392 | INFO     | design_generator:_determine_design_type:92 -   Frequencies: 470/650/698 MHz
-2025-12-12 19:17:45.392 | INFO     | design_generator:_determine_design_type:93 -   Frequency ratios: [1.3829787234042554, 1.4851063829787234, 1.073846153846154]
-2025-12-12 19:17:45.393 | INFO     | design_generator:_determine_design_type:94 -   Average ratio: 1.314
-2025-12-12 19:17:45.393 | INFO     | design_generator:_determine_design_type:95 -   Band type: tv_broadcast
-2025-12-12 19:17:45.393 | INFO     | design_generator:_determine_design_type:106 -   Selected: advanced_meander_tri_band (close frequencies, ratio < 1.8)
-2025-12-12 19:17:45.393 | INFO     | design_generator:_generate_geometry_for_type:119 - Generating advanced_meander_tri_band geometry for frequencies 470/650/698 MHz
-2025-12-12 19:17:45.394 | INFO     | design_generator:_generate_advanced_meander_tri_band:549 - Generating advanced meander tri-band design for 470/650/698 MHz
-2025-12-12 19:17:45.394 | INFO     | design:generate_multi_band_meanders:1027 - Generating multi-band meanders for 3 frequencies: [470, 650, 698]
-2025-12-12 19:17:45.394 | INFO     | design:generate_multi_band_meanders:1048 - Using unified substrate utilization strategy for large substrate (8x8+)
-2025-12-12 19:17:45.394 | INFO     | design:calculate_target_length:545 - Target length: f=698.0MHz, kc=0.90, L_target=7.61" (193.3mm)
-2025-12-12 19:17:45.395 | INFO     | design:calculate_target_length:545 - Target length: f=470.0MHz, kc=0.90, L_target=11.30" (287.0mm)
-2025-12-12 19:17:45.395 | INFO     | design:calculate_target_length:545 - Target length: f=470.0MHz, kc=0.90, L_target=11.30" (287.0mm)
-2025-12-12 19:17:45.396 | INFO     | design:calculate_target_length:545 - Target length: f=650.0MHz, kc=0.90, L_target=8.17" (207.5mm)
-2025-12-12 19:17:45.396 | INFO     | design:calculate_target_length:545 - Target length: f=698.0MHz, kc=0.90, L_target=7.61" (193.3mm)
-2025-12-12 19:17:45.396 | INFO     | design:_calculate_unified_constraints:1454 - Unified constraints for 3 bands: avg_freq=606.0MHz, trace_width=8mil, target_length=32.50"
-2025-12-12 19:17:45.396 | INFO     | design:_generate_unified_substrate_meander:1488 - Generating unified substrate meander: target=32.50", bounds=(1.950", 0.950"), trace=8mil
-2025-12-12 19:17:45.397 | INFO     | design:_generate_max_density_spiral:1651 - unified_positive max density spiral: 22 segments, length=21.44" (131.9% of target), passes=11, height_util=46.0%, width_util=49.0%, overall=47.5%
-2025-12-12 19:17:45.397 | INFO     | design:_generate_max_density_spiral:1651 - unified_negative max density spiral: 22 segments, length=21.44" (131.9% of target), passes=11, height_util=46.0%, width_util=49.0%, overall=47.5%
-2025-12-12 19:17:45.398 | INFO     | design:_generate_unified_substrate_meander:1522 - Generated unified substrate meander: 45 segments, 450 total lines
-2025-12-12 19:17:45.398 | WARNING  | design:calculate_effective_permittivity:489 - Invalid dimensions: w=0.0, h=0.063
-2025-12-12 19:17:45.398 | INFO     | design:generate_multi_band_meanders:1081 - Generated unified substrate-filling meander: 450 segments
-2025-12-12 19:17:45.398 | INFO     | design:_calculate_optimization_summary:1394 - Optimization summary: quality_score=45.0, efficiency=0.0%, spatial_utilization=0.0%
-2025-12-12 19:17:45.399 | INFO     | design_generator:_generate_advanced_meander_tri_band:570 - Advanced meander tri-band generated: 45.0 quality score
-2025-12-12 19:17:45.404 | INFO     | design_generator:_combine_geometries:235 - Combined 45 total wires from 1 geometries
-2025-12-12 19:17:45.404 | INFO     | design_generator:_generate_geometry_for_type:182 - Generated advanced_meander_tri_band geometry with 1 element(s), 2129 total characters
-2025-12-12 19:17:45.405 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
-2025-12-12 19:17:45.406 | INFO     | core:run_simulation:94 - Running NEC2 simulation for 470 MHz
-2025-12-12 19:17:45.409 | INFO     | core:run_simulation:94 - Running NEC2 simulation for 650 MHz
-2025-12-12 19:17:45.411 | INFO     | core:run_simulation:94 - Running NEC2 simulation for 698 MHz
-2025-12-12 19:17:45.413 | INFO     | core:run_simulation:102 - Simulation completed for 3 frequencies
-2025-12-12 19:17:45.414 | INFO     | design_generator:generate_design:63 - Design generation completed: advanced_meander_tri_band with success
-2025-12-12 19:17:45.414 | INFO     | __main__:_design_generation_complete:507 - Geometry set for export: 2129 characters
-2025-12-12 19:17:56.089 | INFO     | storage:save_design:211 - Saved design 'uhf' to C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_191756_470_650_698_uhf.json
-2025-12-12 19:17:56.110 | INFO     | storage:list_designs:286 - Listed 3 designs from C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:17:56.111 | INFO     | __main__:_refresh_designs_list:1205 - Storage returned 3 designs
-2025-12-12 19:17:56.112 | INFO     | __main__:_refresh_designs_list:1237 - Treeview insertion complete: 3 successful, 0 failed
-2025-12-12 19:17:56.113 | INFO     | storage:list_designs:286 - Listed 3 designs from C:\Users\hdcor\mini-antenna-designer\designs
-2025-12-12 19:17:56.113 | INFO     | storage:get_design_stats:383 - Generated stats for 3 designs
-2025-12-12 19:17:56.114 | INFO     | __main__:_refresh_designs_list:1258 - Design list refresh completed successfully
-2025-12-12 19:17:58.550 | INFO     | storage:load_design:244 - Loaded design 'uhf' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_191756_470_650_698_uhf.json
-2025-12-12 19:18:00.904 | INFO     | storage:load_design:244 - Loaded design 'hh' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_191133_174_200_216_hh.json
-2025-12-12 19:18:02.207 | INFO     | storage:load_design:244 - Loaded design 'uhf' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_191756_470_650_698_uhf.json
-2025-12-12 19:18:03.945 | INFO     | storage:load_design:244 - Loaded design 'hh' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_191133_174_200_216_hh.json
-2025-12-12 19:18:04.544 | INFO     | storage:load_design:244 - Loaded design 'test' from C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_181910_2412_2437_2462_test.json
+2025-12-12 20:17:44.579 | INFO     | presets:<module>:382 - Frequency band presets initialized with comprehensive band definitions
+2025-12-12 20:17:44.821 | INFO     | storage:<module>:509 - Design storage system initialized with thumbnail generation and JSON serialization
+2025-12-12 20:17:44.822 | INFO     | __main__:main:11 - Starting Mini Antenna Designer application
+2025-12-12 20:17:44.866 | WARNING  | core:__init__:60 - NEC2 executable not found: NEC2 executable not found. Please specify nec2_path or install NEC2. - using mock simulation mode
+2025-12-12 20:17:44.867 | INFO     | design:__init__:21 - Antenna design initialized for 4.0x2.0 inch substrate
+2025-12-12 20:17:44.867 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
+2025-12-12 20:17:44.867 | INFO     | design_generator:__init__:21 - Antenna design generator initialized with advanced meander capability for 4.0x2.0 inch substrate
+2025-12-12 20:17:44.868 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
+2025-12-12 20:17:44.868 | INFO     | storage:__init__:129 - Design storage directory created/verified: C:\Users\hdcor\mini-antenna-designer\designs
+2025-12-12 20:17:44.869 | INFO     | storage:__init__:142 - Storage directory is writable
+2025-12-12 20:17:44.869 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
+2025-12-12 20:17:44.869 | INFO     | storage:__init__:150 - Design storage initialized at: C:\Users\hdcor\mini-antenna-designer\designs
+2025-12-12 20:17:44.929 | INFO     | ui:_create_designs_tab:1156 - Successfully created paned window for designs tab
+2025-12-12 20:17:44.938 | INFO     | ui:_create_designs_tab:1245 - GUI creation complete, scheduling design library initialization...
+2025-12-12 20:17:44.939 | INFO     | ui:__init__:77 - GUI initialized
+2025-12-12 20:17:45.039 | INFO     | ui:_delayed_initial_refresh:1738 - Performing delayed design library initialization...
+2025-12-12 20:17:45.042 | INFO     | storage:list_designs:286 - Listed 4 designs from C:\Users\hdcor\mini-antenna-designer\designs
+2025-12-12 20:17:45.042 | INFO     | ui:_refresh_designs_list:1343 - Storage returned 4 designs
+2025-12-12 20:17:45.043 | INFO     | ui:_refresh_designs_list:1375 - Treeview insertion complete: 4 successful, 0 failed
+2025-12-12 20:17:45.044 | INFO     | storage:list_designs:286 - Listed 4 designs from C:\Users\hdcor\mini-antenna-designer\designs
+2025-12-12 20:17:45.044 | INFO     | storage:get_design_stats:383 - Generated stats for 4 designs
+2025-12-12 20:17:45.045 | INFO     | ui:_refresh_designs_list:1396 - Design list refresh completed successfully
+2025-12-12 20:17:45.045 | INFO     | ui:_delayed_initial_refresh:1741 - Design library loaded successfully
+2025-12-12 20:17:50.926 | INFO     | design:__init__:21 - Antenna design initialized for 4.0x2.0 inch substrate
+2025-12-12 20:17:50.927 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
+2025-12-12 20:17:50.927 | INFO     | design_generator:__init__:21 - Antenna design generator initialized with advanced meander capability for 4.0x2.0 inch substrate
+2025-12-12 20:17:50.927 | INFO     | design_generator:generate_design:34 - Generating design for TV VHF High: 174/200/216 MHz
+2025-12-12 20:17:50.928 | INFO     | design_generator:_determine_design_type:91 - Design type analysis for TV VHF High:
+2025-12-12 20:17:50.928 | INFO     | design_generator:_determine_design_type:92 -   Frequencies: 174/200/216 MHz
+2025-12-12 20:17:50.928 | INFO     | design_generator:_determine_design_type:93 -   Frequency ratios: [1.1494252873563218, 1.2413793103448276, 1.08]
+2025-12-12 20:17:50.928 | INFO     | design_generator:_determine_design_type:94 -   Average ratio: 1.157
+2025-12-12 20:17:50.928 | INFO     | design_generator:_determine_design_type:95 -   Band type: tv_broadcast
+2025-12-12 20:17:50.928 | INFO     | design_generator:_determine_design_type:106 -   Selected: advanced_meander_tri_band (close frequencies, ratio < 1.8)
+2025-12-12 20:17:50.928 | INFO     | design_generator:_generate_geometry_for_type:119 - Generating advanced_meander_tri_band geometry for frequencies 174/200/216 MHz
+2025-12-12 20:17:50.929 | INFO     | design_generator:_generate_advanced_meander_tri_band:549 - Generating advanced meander tri-band design for 174/200/216 MHz
+2025-12-12 20:17:50.929 | INFO     | design:generate_multi_band_meanders:1036 - Generating multi-band meanders for 3 frequencies: [174, 200, 216]
+2025-12-12 20:17:50.929 | INFO     | design:generate_multi_band_meanders:1057 - Using unified substrate utilization strategy for large substrate (8x8+)
+2025-12-12 20:17:50.929 | INFO     | design:calculate_target_length:554 - Target length: f=216.0MHz, kc=0.90, L_target=24.59" (624.6mm)
+2025-12-12 20:17:50.930 | INFO     | design:calculate_target_length:554 - Target length: f=174.0MHz, kc=0.90, L_target=30.52" (775.3mm)
+2025-12-12 20:17:50.930 | INFO     | design:calculate_target_length:554 - Target length: f=174.0MHz, kc=0.90, L_target=30.52" (775.3mm)
+2025-12-12 20:17:50.930 | INFO     | design:calculate_target_length:554 - Target length: f=200.0MHz, kc=0.90, L_target=26.56" (674.5mm)
+2025-12-12 20:17:50.931 | INFO     | design:calculate_target_length:554 - Target length: f=216.0MHz, kc=0.90, L_target=24.59" (624.6mm)
+2025-12-12 20:17:50.931 | INFO     | design:_calculate_unified_constraints:1463 - Unified constraints for 3 bands: avg_freq=196.7MHz, trace_width=8mil, target_length=98.00"
+2025-12-12 20:17:50.931 | INFO     | design:_generate_unified_substrate_meander:1497 - Generating unified substrate meander: target=98.00", bounds=(1.950", 0.950"), trace=8mil
+2025-12-12 20:17:50.931 | INFO     | design:_generate_max_density_spiral:1660 - unified_positive max density spiral: 62 segments, length=60.42" (123.3% of target), passes=31, height_util=100.0%, width_util=49.0%, overall=74.5%
+2025-12-12 20:17:50.932 | INFO     | design:_generate_max_density_spiral:1660 - unified_negative max density spiral: 62 segments, length=60.42" (123.3% of target), passes=31, height_util=100.0%, width_util=49.0%, overall=74.5%
+2025-12-12 20:17:50.932 | INFO     | design:_generate_unified_substrate_meander:1531 - Generated unified substrate meander: 125 segments, 1250 total lines
+2025-12-12 20:17:50.932 | WARNING  | design:calculate_effective_permittivity:487 - Invalid trace width: w=0.0, using default 0.001
+2025-12-12 20:17:50.932 | INFO     | design:generate_multi_band_meanders:1090 - Generated unified substrate-filling meander: 1250 segments
+2025-12-12 20:17:50.933 | INFO     | design:_calculate_optimization_summary:1403 - Optimization summary: quality_score=35.0, efficiency=0.0%, spatial_utilization=0.0%
+2025-12-12 20:17:50.933 | INFO     | design_generator:_generate_advanced_meander_tri_band:570 - Advanced meander tri-band generated: 35.0 quality score
+2025-12-12 20:17:50.941 | INFO     | design_generator:_combine_geometries:235 - Combined 125 total wires from 1 geometries
+2025-12-12 20:17:50.941 | INFO     | design_generator:_generate_geometry_for_type:182 - Generated advanced_meander_tri_band geometry with 1 element(s), 5995 total characters
+2025-12-12 20:17:50.942 | INFO     | export:__init__:37 - Vector exporter initialized with output dir: exports
+2025-12-12 20:17:50.943 | INFO     | core:run_simulation:102 - Running NEC2 simulation for 174 MHz
+2025-12-12 20:17:50.944 | INFO     | core:run_simulation:102 - Running NEC2 simulation for 200 MHz
+2025-12-12 20:17:50.944 | INFO     | core:run_simulation:102 - Running NEC2 simulation for 216 MHz
+2025-12-12 20:17:50.945 | INFO     | core:run_simulation:110 - Simulation completed for 3 frequencies
+2025-12-12 20:17:50.945 | INFO     | design_generator:generate_design:63 - Design generation completed: advanced_meander_tri_band with success
+2025-12-12 20:17:50.946 | INFO     | ui:_design_generation_complete:645 - Geometry set for export: 5995 characters
+2025-12-12 20:17:55.235 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
+2025-12-12 20:17:55.235 | INFO     | band_chart:__init__:32 - BandAnalysisChart initialized for 4.0x2.0 inch substrate
+2025-12-12 20:17:55.235 | INFO     | band_chart:calculate_band_lengths:47 - Calculating lengths for Current: 174/200/216 MHz: [174, 200, 216] MHz
+2025-12-12 20:17:55.236 | INFO     | design:generate_multi_band_meanders:1036 - Generating multi-band meanders for 3 frequencies: [174, 200, 216]
+2025-12-12 20:17:55.236 | INFO     | design:generate_multi_band_meanders:1057 - Using unified substrate utilization strategy for large substrate (8x8+)
+2025-12-12 20:17:55.236 | INFO     | design:calculate_target_length:554 - Target length: f=216.0MHz, kc=0.90, L_target=24.59" (624.6mm)
+2025-12-12 20:17:55.236 | INFO     | design:calculate_target_length:554 - Target length: f=174.0MHz, kc=0.90, L_target=30.52" (775.3mm)
+2025-12-12 20:17:55.236 | INFO     | design:calculate_target_length:554 - Target length: f=174.0MHz, kc=0.90, L_target=30.52" (775.3mm)
+2025-12-12 20:17:55.236 | INFO     | design:calculate_target_length:554 - Target length: f=200.0MHz, kc=0.90, L_target=26.56" (674.5mm)
+2025-12-12 20:17:55.237 | INFO     | design:calculate_target_length:554 - Target length: f=216.0MHz, kc=0.90, L_target=24.59" (624.6mm)
+2025-12-12 20:17:55.237 | INFO     | design:_calculate_unified_constraints:1463 - Unified constraints for 3 bands: avg_freq=196.7MHz, trace_width=8mil, target_length=98.00"
+2025-12-12 20:17:55.237 | INFO     | design:_generate_unified_substrate_meander:1497 - Generating unified substrate meander: target=98.00", bounds=(1.950", 0.950"), trace=8mil
+2025-12-12 20:17:55.237 | INFO     | design:_generate_max_density_spiral:1660 - unified_positive max density spiral: 62 segments, length=60.42" (123.3% of target), passes=31, height_util=100.0%, width_util=49.0%, overall=74.5%
+2025-12-12 20:17:55.238 | INFO     | design:_generate_max_density_spiral:1660 - unified_negative max density spiral: 62 segments, length=60.42" (123.3% of target), passes=31, height_util=100.0%, width_util=49.0%, overall=74.5%
+2025-12-12 20:17:55.238 | INFO     | design:_generate_unified_substrate_meander:1531 - Generated unified substrate meander: 125 segments, 1250 total lines
+2025-12-12 20:17:55.239 | WARNING  | design:calculate_effective_permittivity:487 - Invalid trace width: w=0.0, using default 0.001
+2025-12-12 20:17:55.239 | INFO     | design:generate_multi_band_meanders:1090 - Generated unified substrate-filling meander: 1250 segments
+2025-12-12 20:17:55.239 | INFO     | design:_calculate_optimization_summary:1403 - Optimization summary: quality_score=35.0, efficiency=0.0%, spatial_utilization=0.0%
+2025-12-12 20:17:56.052 | INFO     | band_chart:_generate_comparison_chart_content:407 - Chart saved to band_analysis.png
+2025-12-12 20:18:24.732 | INFO     | storage:save_design:211 - Saved design 'x' to C:\Users\hdcor\mini-antenna-designer\designs\design_20251212_201824_174_200_216_x.json
+2025-12-12 20:18:24.745 | INFO     | storage:list_designs:286 - Listed 5 designs from C:\Users\hdcor\mini-antenna-designer\designs
+2025-12-12 20:18:24.745 | INFO     | ui:_refresh_designs_list:1343 - Storage returned 5 designs
+2025-12-12 20:18:24.747 | INFO     | ui:_refresh_designs_list:1375 - Treeview insertion complete: 5 successful, 0 failed
+2025-12-12 20:18:24.748 | INFO     | storage:list_designs:286 - Listed 5 designs from C:\Users\hdcor\mini-antenna-designer\designs
+2025-12-12 20:18:24.748 | INFO     | storage:get_design_stats:383 - Generated stats for 5 designs
+2025-12-12 20:18:24.749 | INFO     | ui:_refresh_designs_list:1396 - Design list refresh completed successfully
+2025-12-12 20:18:31.966 | INFO     | design:__init__:471 - AdvancedMeanderTrace initialized for 4.0x2.0 inch substrate
+2025-12-12 20:18:31.966 | INFO     | band_chart:__init__:32 - BandAnalysisChart initialized for 4.0x2.0 inch substrate
+2025-12-12 20:18:31.966 | INFO     | band_chart:calculate_band_lengths:47 - Calculating lengths for Current: 174/200/216 MHz: [174, 200, 216] MHz
+2025-12-12 20:18:31.966 | INFO     | design:generate_multi_band_meanders:1036 - Generating multi-band meanders for 3 frequencies: [174, 200, 216]
+2025-12-12 20:18:31.966 | INFO     | design:generate_multi_band_meanders:1057 - Using unified substrate utilization strategy for large substrate (8x8+)
+2025-12-12 20:18:31.967 | INFO     | design:calculate_target_length:554 - Target length: f=216.0MHz, kc=0.90, L_target=24.59" (624.6mm)
+2025-12-12 20:18:31.967 | INFO     | design:calculate_target_length:554 - Target length: f=174.0MHz, kc=0.90, L_target=30.52" (775.3mm)
+2025-12-12 20:18:31.967 | INFO     | design:calculate_target_length:554 - Target length: f=174.0MHz, kc=0.90, L_target=30.52" (775.3mm)
+2025-12-12 20:18:31.967 | INFO     | design:calculate_target_length:554 - Target length: f=200.0MHz, kc=0.90, L_target=26.56" (674.5mm)
+2025-12-12 20:18:31.967 | INFO     | design:calculate_target_length:554 - Target length: f=216.0MHz, kc=0.90, L_target=24.59" (624.6mm)
+2025-12-12 20:18:31.968 | INFO     | design:_calculate_unified_constraints:1463 - Unified constraints for 3 bands: avg_freq=196.7MHz, trace_width=8mil, target_length=98.00"
+2025-12-12 20:18:31.968 | INFO     | design:_generate_unified_substrate_meander:1497 - Generating unified substrate meander: target=98.00", bounds=(1.950", 0.950"), trace=8mil
+2025-12-12 20:18:31.968 | INFO     | design:_generate_max_density_spiral:1660 - unified_positive max density spiral: 62 segments, length=60.42" (123.3% of target), passes=31, height_util=100.0%, width_util=49.0%, overall=74.5%
+2025-12-12 20:18:31.968 | INFO     | design:_generate_max_density_spiral:1660 - unified_negative max density spiral: 62 segments, length=60.42" (123.3% of target), passes=31, height_util=100.0%, width_util=49.0%, overall=74.5%
+2025-12-12 20:18:31.969 | INFO     | design:_generate_unified_substrate_meander:1531 - Generated unified substrate meander: 125 segments, 1250 total lines
+2025-12-12 20:18:31.969 | WARNING  | design:calculate_effective_permittivity:487 - Invalid trace width: w=0.0, using default 0.001
+2025-12-12 20:18:31.969 | INFO     | design:generate_multi_band_meanders:1090 - Generated unified substrate-filling meander: 1250 segments
+2025-12-12 20:18:31.969 | INFO     | design:_calculate_optimization_summary:1403 - Optimization summary: quality_score=35.0, efficiency=0.0%, spatial_utilization=0.0%
+2025-12-12 20:18:32.734 | INFO     | band_chart:_generate_comparison_chart_content:407 - Chart saved to band_analysis.png

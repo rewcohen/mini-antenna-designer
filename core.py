@@ -8,22 +8,30 @@ import os
 import time
 
 def _rotate_logs_on_startup():
-    """Rotate logs on application startup."""
+    """Rotate logs on application startup with robust error handling."""
     log_file = Path("antenna_designer.log")
     backup_file = Path("antenna_designer.log.bak")
-    
+
     if log_file.exists():
-        # Check if backup already exists
-        if backup_file.exists():
-            # Remove old backup
-            backup_file.unlink()
-        
-        # Move current log to backup
-        log_file.rename(backup_file)
-        
-        # Create new empty log file
-        log_file.touch()
-        logger.info("Log file rotated on startup")
+        try:
+            # Check if backup already exists and remove it
+            if backup_file.exists():
+                backup_file.unlink()
+
+            # Move current log to backup
+            log_file.rename(backup_file)
+            logger.info("Log file rotated on startup")
+
+        except (OSError, PermissionError) as e:
+            # If rotation fails (file in use, permissions, etc.), just truncate
+            try:
+                # Try to truncate the existing log file instead
+                with open(log_file, 'w') as f:
+                    f.write(f"# Log rotated/truncated due to error: {str(e)}\n")
+                logger.info("Log file truncated (rotation failed due to file in use)")
+            except Exception as truncate_e:
+                logger.warning(f"Could not rotate or truncate log file: {str(e)}, {str(truncate_e)}")
+                # Silently fail - logging may not work but app should continue
 
 # Configure logging with rotation
 _rotate_logs_on_startup()  # Rotate logs at startup

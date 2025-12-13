@@ -472,41 +472,50 @@ class AdvancedMeanderTrace:
     
     def calculate_effective_permittivity(self, er: float, h: float, w: float) -> float:
         """Calculate effective permittivity using microstrip approximation.
-        
+
         Args:
             er: Substrate relative permittivity
             h: Substrate thickness (same units as w)
             w: Trace width (same units as h)
-            
+
         Returns:
             float: Effective permittivity
         """
         try:
+            # Input validation with more robust handling
+            if w <= 0:
+                logger.warning(f"Invalid trace width: w={w}, using default 0.001")
+                w = 0.001
+
+            if h <= 0:
+                logger.warning(f"Invalid substrate thickness: h={h}, using default 0.0016")
+                h = 0.0016
+
+            if er <= 1.0:
+                logger.warning(f"Invalid permittivity: er={er}, using default 4.3")
+                er = 4.3
+
             # Microstrip effective permittivity formula
             # e_eff ≈ (er + 1)/2 + (er - 1)/2 * (1 / sqrt(1 + 12 * (h/w)))
-            
-            if w <= 0 or h <= 0:
-                logger.warning(f"Invalid dimensions: w={w}, h={h}")
-                return er
-            
+
             hw_ratio = h / w
             denom = math.sqrt(1 + 12 * hw_ratio)
-            
+
             if denom <= 0:
-                logger.warning(f"Invalid denominator in permittivity calculation: {denom}")
+                logger.warning(f"Invalid denominator in permittivity calculation: {denom}, using substrate permittivity")
                 return er
-            
+
             frac = 1 / denom
             mid = (er + 1) / 2
             diff = (er - 1) / 2
-            
+
             e_eff = mid + diff * frac
             logger.debug(f"Effective permittivity: er={er}, h/w={hw_ratio:.3f}, e_eff={e_eff:.3f}")
-            
+
             return e_eff
-            
+
         except Exception as e:
-            logger.error(f"Effective permittivity calculation failed: {str(e)}")
+            logger.error(f"Effective permittivity calculation failed: {str(e)}, using substrate permittivity")
             return er  # Fallback to substrate permittivity
     
     def calculate_target_length(self, frequency_hz: float, er_eff: float, kc: float = 0.90) -> float:

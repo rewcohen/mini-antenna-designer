@@ -202,8 +202,15 @@ class BandAnalysis:
     """Analyze frequency band characteristics for antenna design."""
 
     @staticmethod
-    def analyze_band_compatibility(band: FrequencyBand) -> Dict[str, any]:
-        """Analyze band characteristics for antenna design feasibility."""
+    def analyze_band_compatibility(band: FrequencyBand, substrate_width: float = 4.0,
+                                 substrate_height: float = 2.0) -> Dict[str, any]:
+        """Analyze band characteristics for antenna design feasibility.
+
+        Args:
+            band: FrequencyBand to analyze
+            substrate_width: Substrate width in inches (default 4.0)
+            substrate_height: Substrate height in inches (default 2.0)
+        """
         analysis = {
             'feasibility_score': 0.0,  # 0-10 scale
             'design_complexity': 'medium',
@@ -237,19 +244,37 @@ class BandAnalysis:
             analysis['optimization_notes'].append("High frequency ratio requires advanced compensation techniques")
             analysis['warnings'].append("Large frequency separation may limit achievable bandwidth")
 
-        # Size analysis
+        # Size analysis using provided dimensions
         size_est = band.get_size_estimate()
-        substrate_size = 4.0 * 2.0  # 4x2 inch substrate
-        electrical_size = size_est['quarter_wave_inch']
+        substrate_area = substrate_width * substrate_height  # Total substrate area
+        electrical_size = size_est['quarter_wave_inch']  # Quarter wave length needed
 
-        if electrical_size > substrate_size * 1.5:
+        # Adjust feasibility based on substrate size
+        # Larger substrate = easier design = higher feasibility
+        size_ratio = electrical_size / substrate_area
+
+        if size_ratio > 2.0:  # Very tight fit
             analysis['size_constraints'] = 'tight'
             analysis['warnings'].append("Antenna may require loading for size reduction")
-            analysis['feasibility_score'] -= 0.2  # Slightly reduced feasibility due to size constraints
+            analysis['feasibility_score'] -= 0.5  # Significantly reduced due to size constraints
+            analysis['design_complexity'] = 'high'
 
-        elif electrical_size < substrate_size * 0.1:
+        elif size_ratio > 1.0:  # Challenging fit
+            analysis['size_constraints'] = 'tight'
+            analysis['warnings'].append("Space constraints may limit antenna efficiency")
+            analysis['feasibility_score'] -= 0.2  # Slightly reduced feasibility
+            analysis['design_complexity'] = 'medium'
+
+        elif size_ratio < 0.2:  # Loose fit - very favorable
             analysis['size_constraints'] = 'loose'
             analysis['optimization_notes'].append("Size constraints not limiting factor")
+            analysis['feasibility_score'] += 0.5  # Significantly improved due to ample space
+            if analysis['design_complexity'] != 'high':
+                analysis['design_complexity'] = 'low'
+
+        else:  # Good fit
+            analysis['size_constraints'] = 'optimal'
+            analysis['optimization_notes'].append("Substrate size well-matched to electrical requirements")
 
         # Band-specific analysis
         if band.band_type == BandType.TV_BROADCAST:
@@ -265,6 +290,9 @@ class BandAnalysis:
             analysis['recommended_antenna_types'] = ['helical', 'patch']
             if any(f < 1000 for f in band.frequencies):
                 analysis['warnings'].append("Very low frequencies may be challenging in small form factor")
+
+        # Overall feasibility score bounds
+        analysis['feasibility_score'] = max(0.0, min(10.0, analysis['feasibility_score']))
 
         return analysis
 
