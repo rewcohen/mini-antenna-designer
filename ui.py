@@ -30,11 +30,60 @@ from storage import DesignStorage, DesignMetadata
 class AntennaDesignerGUI:
     """Main GUI application for antenna design."""
 
+    # Azure color scheme
+    AZURE_COLORS = {
+        'primary': '#0078D4',          # Main Azure blue
+        'primary_hover': '#106EBE',    # Darker blue for hover
+        'primary_light': '#E1E5ED',    # Very light blue background
+        'success': '#107C10',          # Green for completed steps
+        'current': '#0078D4',          # Current step highlight
+        'upcoming': '#B3B3B3',         # Gray for future steps
+        'border': '#EDEBE9',           # Light borders
+        'background': '#F3F2F1',       # Background gray
+        'background_dark': '#EAEAEA',  # Darker background
+        'text_primary': '#201F1E',     # Dark text
+        'text_secondary': '#605E5C'    # Secondary text
+    }
+
+    # Workflow steps
+    WORKFLOW_STEPS = [
+        {
+            'id': 'design',
+            'name': 'Design',
+            'description': 'Configure antenna parameters',
+            'tab_index': 0
+        },
+        {
+            'id': 'results',
+            'name': 'Results',
+            'description': 'Review generated design',
+            'tab_index': 1
+        },
+        {
+            'id': 'analysis',
+            'name': 'Analysis',
+            'description': 'View band analysis',
+            'tab_index': 2
+        },
+        {
+            'id': 'export',
+            'name': 'Export',
+            'description': 'Export design files',
+            'tab_index': 3
+        },
+        {
+            'id': 'designs',
+            'name': 'My Designs',
+            'description': 'Manage saved designs',
+            'tab_index': 4
+        }
+    ]
+
     def __init__(self, root):
         """Initialize the GUI."""
         self.root = root
         self.root.title("Mini Antenna Designer - Tri-Band Design")
-        self.root.geometry("1200x800")
+        self.root.geometry("1200x850")  # Slightly taller for workflow components
         self.root.resizable(True, True)
 
         # Initialize backend components
@@ -49,6 +98,11 @@ class AntennaDesignerGUI:
         self.selected_band_key: Optional[str] = None
         self.processing_thread: Optional[threading.Thread] = None
         self.current_thumbnail: Optional[ImageTk.PhotoImage] = None
+
+        # Workflow state variables
+        self.workflow_current_step = 0  # 0-based index
+        self.workflow_completed_steps = set()  # Set of completed step IDs
+        self.workflow_last_generation_hash = None  # Hash of UI settings for change detection
 
         # Substrate size variables (default to 4x2 inches)
         self.substrate_width_var = StringVar(value="4.0")
@@ -145,9 +199,32 @@ class AntennaDesignerGUI:
 
     def _create_main_layout(self):
         """Create the main GUI layout with tabs."""
-        self.notebook = ttk.Notebook(self.root)
+        # Create main container with workflow components
+        main_container = ttk.Frame(self.root)
+        main_container.pack(fill='both', expand=True)
+
+        # Top progress bar
+        self.workflow_progress_frame = ttk.Frame(main_container, height=60)
+        self.workflow_progress_frame.pack(fill='x', side='top', padx=5, pady=5)
+        self._create_workflow_progress_bar()
+
+        # Main content area (tabs)
+        self.notebook = ttk.Notebook(main_container)
         self.notebook.pack(fill='both', expand=True, padx=5, pady=5)
 
+        # Add tabs with workflow status indicators
+        self._create_tabs()
+
+        # Bottom navigation
+        self.workflow_nav_frame = ttk.Frame(main_container, height=50)
+        self.workflow_nav_frame.pack(fill='x', side='bottom', padx=5, pady=5)
+        self._create_workflow_navigation()
+
+        # Bind tab change event for auto-calculation
+        self.notebook.bind('<<NotebookTabChanged>>', self._on_tab_changed)
+
+    def _create_tabs(self):
+        """Create all tabs with workflow status indicators."""
         # Design tab
         design_frame = ttk.Frame(self.notebook)
         self.notebook.add(design_frame, text='Design')
@@ -173,28 +250,378 @@ class AntennaDesignerGUI:
         self.notebook.add(designs_frame, text='My Designs')
         self._create_designs_tab(designs_frame)
 
-        # Bind tab change event for auto-calculation
-        self.notebook.bind('<<NotebookTabChanged>>', self._on_tab_changed)
+        # Initialize workflow display
+        self._update_workflow_display()
+
+    def _create_workflow_progress_bar(self):
+        """Create a horizontal perforated progress bar showing workflow completion."""
+        # Main progress container
+        progress_container = ttk.Frame(self.workflow_progress_frame)
+        progress_container.pack(fill='both', expand=True, padx=10, pady=5)
+
+        # Workflow status area
+        status_label = ttk.Label(progress_container, text="",
+                               font=('Segoe UI', 11, 'bold'),
+                               foreground=self.AZURE_COLORS['text_primary'])
+        status_label.pack(anchor='w')
+        self.workflow_status_label = status_label
+
+        # Progress bar frame
+        progress_frame = ttk.Frame(progress_container)
+        progress_frame.pack(fill='x', pady=(5, 0))
+
+        # Apply perforated styling
+        self._apply_progress_bar_styling()
+
+        # Progress bar with Azure colors
+        self.workflow_progress_var = DoubleVar(value=0.0)
+        self.workflow_progress = ttk.Progressbar(
+            progress_frame,
+            orient='horizontal',
+            mode='determinate',
+            variable=self.workflow_progress_var,
+            maximum=100.0,
+            length=600,  # Fixed width for consistency
+            style='Azure.Horizontal.TProgressbar'
+        )
+        self.workflow_progress.pack(side='left', expand=True)
+
+        # Percentage label
+        self.progress_percentage_label = ttk.Label(
+            progress_frame,
+            text="0%",
+            font=('Segoe UI', 10, 'bold'),
+            foreground=self.AZURE_COLORS['current']
+        )
+        self.progress_percentage_label.pack(side='left', padx=(10, 0))
+
+        # Current step indicator label
+        self.workflow_step_indicator = ttk.Label(
+            progress_container,
+            text="Design: Configure antenna parameters",
+            font=('Segoe UI', 9),
+            foreground=self.AZURE_COLORS['text_secondary']
+        )
+        self.workflow_step_indicator.pack(anchor='w', pady=(2, 0))
+
+    def _create_workflow_navigation(self):
+        """Create the bottom navigation buttons with high contrast solid backgrounds."""
+        nav_container = ttk.Frame(self.workflow_nav_frame)
+        nav_container.pack(anchor='center', pady=5)
+
+        # Previous button - use Label as button for solid background
+        self.prev_button = ttk.Label(nav_container,
+                                    text="◀ Previous",
+                                    font=('Segoe UI', 11, 'bold'),
+                                    background='#FFFFFF',
+                                    foreground='#0078D4',
+                                    anchor='center',
+                                    padding=[10, 5],
+                                    borderwidth=2,
+                                    relief='raised')
+        self.prev_button.pack(side='left', padx=10)
+        self.prev_button.config(state='disabled')
+        self.prev_button.bind('<Button-1>', lambda e: self._previous_workflow_step())
+        self.prev_button.bind('<Enter>', lambda e: self.prev_button.config(background='#F0F0F0'))
+        self.prev_button.bind('<Leave>', lambda e: self.prev_button.config(background='#FFFFFF'))
+
+        # Separator
+        separator = ttk.Frame(nav_container, width=20, height=1)
+        separator.pack(side='left')
+
+        # Next button - use Label as button for solid background
+        self.next_button = ttk.Label(nav_container,
+                                    text="Next: Results ▶",
+                                    font=('Segoe UI', 11, 'bold'),
+                                    background='#0078D4',
+                                    foreground='#FFFFFF',
+                                    anchor='center',
+                                    padding=[10, 5],
+                                    borderwidth=2,
+                                    relief='raised')
+        self.next_button.pack(side='left', padx=10)
+        self.next_button.bind('<Button-1>', lambda e: self._next_workflow_step())
+        self.next_button.bind('<Enter>', lambda e: self.next_button.config(background='#005A9E'))
+        self.next_button.bind('<Leave>', lambda e: self.next_button.config(background='#0078D4'))
+
+        # Hint label
+        hint_label = ttk.Label(self.workflow_nav_frame,
+                             text="Tip: Click progress dots above to jump between completed steps",
+                             font=('Segoe UI', 8),
+                             foreground=self.AZURE_COLORS['text_secondary'])
+        hint_label.pack(anchor='center', pady=(5, 0))
+
+    def _apply_azure_button_styling(self):
+        """Apply Azure styling to buttons."""
+        style = ttk.Style()
+
+        # Azure primary button style with high contrast
+        style.configure('Azure.TButton',
+                       font=('Segoe UI', 11, 'bold'),
+                       background=self.AZURE_COLORS['primary'],
+                       foreground='white',
+                       padding=[20, 10, 20, 10],
+                       borderwidth=2,
+                       relief='raised')
+
+        style.map('Azure.TButton',
+                 background=[('active', self.AZURE_COLORS['primary_hover']),
+                           ('pressed', '#005A9E')],
+                 foreground=[('active', 'white'),
+                           ('pressed', 'white')])
+
+        # Add themed style for better cross-platform compatibility
+        try:
+            style.element_create('Azure.Button.back',
+                               'from', 'default')
+            style.layout('Azure.TButton',
+                        [('Azure.Button.back', {'sticky': 'ewnc'}),
+                         ('Button.focus', {'children':
+                           [('Button.text', {'sticky': ''})]})])
+        except:
+            # Fallback styling
+            pass
+
+    def _apply_progress_bar_styling(self):
+        """Apply perforated styling to the progress bar."""
+        style = ttk.Style()
+
+        # Create perforated progress bar style with Azure colors
+        style.configure('Azure.Horizontal.TProgressbar',
+                       background=self.AZURE_COLORS['primary'],
+                       troughcolor='#E1E5ED',  # Light background for contrast
+                       borderwidth=1,
+                       lightcolor=self.AZURE_COLORS['border'],
+                       darkcolor=self.AZURE_COLORS['border'])
+
+        # Add segmented appearance to make it look perforated
+        try:
+            # Try to create a custom element for perforated effect
+            style.element_create('AzureProgress.trough', 'from', 'default')
+            style.element_create('AzureProgress.pbar', 'from', 'default')
+
+            style.layout('Azure.Horizontal.TProgressbar',
+                        [('AzureProgress.trough', {'children':
+                          [('AzureProgress.pbar',
+                            {'side': 'left', 'sticky': 'ns'})],
+                          'sticky': 'nswe'})])
+
+        except Exception:
+            # Fallback to basic styling
+            pass
+
+    def _get_workflow_progress_percentage(self):
+        """Calculate percentage completion based on current workflow state."""
+        total_steps = len(self.WORKFLOW_STEPS)
+        if total_steps == 0:
+            return 0.0
+
+        # Base progress calculation: Design tab = 25%, Results = 50%, Analysis = 75%, Export = 99%, My Designs = 100%
+        step_percentages = {
+            'design': 25.0,   # Design tab completion
+            'results': 50.0,  # Results tab completion
+            'analysis': 75.0, # Analysis tab completion
+            'export': 99.0,   # Export tab completion (almost complete)
+            'designs': 100.0  # My Designs tab = 100% complete
+        }
+
+        current_step_id = self.WORKFLOW_STEPS[self.workflow_current_step]['id']
+        completion_step_id = self.WORKFLOW_STEPS[self.workflow_current_step]['id']
+
+        # If current step is completed, show its completion percentage
+        # If on My Designs tab specifically, always show 100%
+        if current_step_id == 'designs':
+            return 100.0
+
+        # Otherwise show the completion percentage for the current step
+        return step_percentages.get(current_step_id, 0.0)
+
+    def _jump_to_workflow_step(self, step_index):
+        """Jump to a specific workflow step if it's accessible."""
+        if step_index < 0 or step_index >= len(self.WORKFLOW_STEPS):
+            return
+
+        # Check if we can jump to this step (must have completed previous steps or be adjacent)
+        current_completed = len(self.workflow_completed_steps)
+        if step_index > current_completed and step_index != self.workflow_current_step + 1:
+            # Show message that step is not yet accessible
+            step_name = self.WORKFLOW_STEPS[step_index]['name']
+            self._show_error(f"Complete the current step first to access '{step_name}'")
+            return
+
+        # Jump to the step
+        self.workflow_current_step = step_index
+        self.notebook.select(step_index)
+        self._update_workflow_display()
+
+    def _next_workflow_step(self):
+        """Advance to the next workflow step."""
+        if self.workflow_current_step < len(self.WORKFLOW_STEPS) - 1:
+            self.workflow_current_step += 1
+            self.notebook.select(self.workflow_current_step)
+            self._update_workflow_display()
+
+    def _previous_workflow_step(self):
+        """Go back to the previous workflow step."""
+        if self.workflow_current_step > 0:
+            self.workflow_current_step -= 1
+            self.notebook.select(self.workflow_current_step)
+            self._update_workflow_display()
+
+    def _mark_workflow_step_completed(self, step_id):
+        """Mark a workflow step as completed."""
+        self.workflow_completed_steps.add(step_id)
+
+        # Also mark current step as completed if different
+        current_step = self.WORKFLOW_STEPS[self.workflow_current_step]
+        if current_step['id'] == step_id:
+            self.workflow_completed_steps.add(step_id)
+
+        self._update_workflow_display()
 
     def _on_tab_changed(self, event=None):
-        """Handle tab change events for auto-calculation features."""
+        """Handle tab change events for workflow auto-generation and status updates."""
         try:
             # Get the currently selected tab
             current_tab = self.notebook.select()
+            if not current_tab:
+                return
+
             tab_text = self.notebook.tab(current_tab, "text")
 
+            # Update workflow current step based on selected tab
+            self.workflow_current_step = self.notebook.index(current_tab)
+            self._update_workflow_display()
+
+            # Check for design completion - if leaving Design tab with valid settings, auto-generate
+            previous_tab = getattr(self, '_previous_tab', None)
+            if previous_tab and self.notebook.tab(previous_tab, "text") == "Design":
+                if not self.current_geometry and not self.processing_thread:
+                    # Check if we have valid settings to auto-generate
+                    has_valid_settings = self._has_valid_design_settings()
+                    if has_valid_settings and self.workflow_current_step > 0:  # Not staying on design tab
+                        self._auto_generate_design_for_workflow()
+
+            # Store current tab as previous for next change
+            self._previous_tab = current_tab
+
+            # Auto-generate band analysis when visiting that tab
             if tab_text == "Band Analysis":
-                # Check if we have a current design and automatically generate analysis
-                if self.current_results and self.current_geometry:
-                    self._log_message("Auto-calculating band analysis for current design...")
+                self._log_message("Band Analysis tab selected - generating chart automatically...")
+                # Always attempt to generate analysis, it will handle missing data gracefully
+                try:
                     self._generate_band_chart()
-                else:
-                    # Clear the chart area if no design is loaded
-                    self._clear_chart_display()
-                    self._log_message("Band Analysis tab selected - no current design available")
+                except Exception as e:
+                    logger.error(f"Auto-generation of band analysis failed: {str(e)}")
+                    self._log_message("Failed to auto-generate band analysis chart")
+                    self.status_var.set("Band analysis auto-generation failed - use manual button")
+
+            # Auto-trigger save dialog when visiting My Designs tab
+            if tab_text == "My Designs":
+                # Only trigger if we have a current design that hasn't been flagged as already prompted
+                if self.current_geometry and self.current_results:
+                    # Check if we've already prompted for this specific design
+                    current_design_hash = None
+                    try:
+                        import hashlib
+                        # Create a simple hash of key design parameters to identify this design
+                        design_key = f"{self.current_results.get('freq1_mhz', '')}_{self.current_results.get('freq2_mhz', '')}_{self.current_results.get('freq3_mhz', '')}_{self.current_results.get('design_type', '')}"
+                        current_design_hash = hashlib.md5(design_key.encode()).hexdigest()
+                    except:
+                        pass
+
+                    # Check if we've already prompted for this design in this session
+                    if not hasattr(self, '_designs_save_prompted_hash') or self._designs_save_prompted_hash != current_design_hash:
+                        # Ask user if they want to save the current design
+                        self._designs_save_prompted_hash = current_design_hash
+                        self.root.after(100, lambda: self._prompt_auto_save_current_design())
 
         except Exception as e:
             logger.error(f"Error handling tab change: {str(e)}")
+
+    def _has_valid_design_settings(self):
+        """Check if current UI settings are sufficient for design generation."""
+        try:
+            # Check if we have a selected band or custom frequencies
+            has_band_selection = bool(self.band_var.get())
+            has_custom_freqs = False
+
+            try:
+                f1 = float(self.freq1_var.get())
+                has_custom_freqs = f1 > 0
+            except (ValueError, TypeError):
+                pass
+
+            return has_band_selection or has_custom_freqs
+
+        except Exception as e:
+            logger.error(f"Error checking design settings: {str(e)}")
+            return False
+
+    def _auto_generate_design_for_workflow(self):
+        """Auto-generate design when user leaves Design tab to continue workflow."""
+        try:
+            self._log_message("Auto-generating design for workflow progression...")
+            self.status_var.set("Auto-generating design for workflow...")
+
+            # Generate design with current settings
+            self._generate_design()
+            self.workflow_completed_steps.add('design')
+
+        except Exception as e:
+            logger.error(f"Error in auto-generation: {str(e)}")
+            self._show_error("Auto-generation failed. Continue manually from Design tab.")
+
+    def _update_workflow_display(self):
+        """Update progress bar, percentage display, and navigation based on current workflow state."""
+        try:
+            # Update progress bar with calculated percentage
+            percentage = self._get_workflow_progress_percentage()
+            self.workflow_progress_var.set(percentage)
+
+            # Update percentage label with animated transition effect if applicable
+            percentage_text = ""
+            if percentage < 100:
+                percentage_text = f"{int(percentage)}%"
+            else:
+                percentage_text = f"{int(percentage)}% ✓ Complete"
+
+            self.progress_percentage_label.config(text=percentage_text)
+
+            # Update step indicator text
+            current_step_info = self.WORKFLOW_STEPS[self.workflow_current_step]
+            step_text = f"{current_step_info['name']}: {current_step_info['description']}"
+            self.workflow_step_indicator.config(text=step_text)
+
+            # Update main status label
+            completion_count = len(self.workflow_completed_steps)
+            total_steps = len(self.WORKFLOW_STEPS)
+
+            if completion_count == total_steps:
+                workflow_text = f"[Complete] {current_step_info['name']}: {current_step_info['description']}"
+            else:
+                workflow_text = f"Step {self.workflow_current_step + 1} of {total_steps} - {current_step_info['name']}: {current_step_info['description']}"
+
+            self.workflow_status_label.config(text=workflow_text)
+            self.status_var.set(workflow_text)
+
+            # Update navigation buttons
+            if hasattr(self, 'prev_button') and hasattr(self, 'next_button'):
+                # Previous button enabled if not at first step
+                self.prev_button.config(state='normal' if self.workflow_current_step > 0 else 'disabled')
+
+                # Next button text and enabled state
+                if self.workflow_current_step < len(self.WORKFLOW_STEPS) - 1:
+                    next_step = self.WORKFLOW_STEPS[self.workflow_current_step + 1]
+                    self.next_button.config(
+                        text=f"Next: {next_step['name']}",
+                        state='normal'
+                    )
+                else:
+                    self.next_button.config(text="Complete", state='disabled')
+
+        except Exception as e:
+            logger.error(f"Error updating workflow display: {str(e)}")
 
     def _create_design_tab(self, parent):
         """Create the antenna design tab."""
@@ -677,7 +1104,7 @@ Notes:
             self.current_results = results
             # Fix for missing 'geometry' key
             geometry = results.get('geometry', '') if isinstance(results, dict) else ''
-            
+
             # Set geometry if we have valid geometry content, even if validation has issues
             if geometry and geometry.strip():
                 self.current_geometry = geometry
@@ -692,6 +1119,9 @@ Notes:
 
             # Always treat as successful unless there's an explicit error
             if not results.get('error'):
+                # Mark design step as completed in workflow
+                self._mark_workflow_step_completed('design')
+
                 trace_info = f" ({results.get('trace_width_mil', 10):.1f} mil traces)" if results.get('trace_width_mil') is not None else ""
                 self.status_var.set("Design generation complete")
                 self._log_message(f"Design generated: {results.get('design_type', 'Unknown')} type - {results.get('band_name', 'Unknown')}{trace_info}")
@@ -711,6 +1141,9 @@ Notes:
             self._update_design_status_indicators(results)
             if self.current_geometry:
                 self._show_geometry_preview()
+
+            # Mark results step as completed if we displayed results
+            self._mark_workflow_step_completed('results')
 
         except Exception as e:
             self._show_error(f"Error processing design results: {str(e)}")
@@ -1972,7 +2405,8 @@ Click OK to continue with an empty design library.
 
             if chart_path and os.path.exists(chart_path):
                 # Display the chart in the UI using matplotlib embedded in tkinter
-                self._display_matplotlib_chart(chart_path)
+                # Use after() to delay display until UI layout is complete
+                self.root.after(100, lambda: self._display_matplotlib_chart(chart_path))
                 self._log_message(f"Band analysis chart generated: {chart_path}")
                 self.status_var.set(f"Chart generated: {chart_path}")
             else:
@@ -1999,10 +2433,10 @@ Click OK to continue with an empty design library.
                 self.chart_original_image = Image.open(chart_path)
 
                 # Reset zoom and pan for new chart
-                self.chart_zoom_level = 1.0
+                self.chart_zoom_level = 0.5
                 self.chart_pan_x = 0
                 self.chart_pan_y = 0
-                self.zoom_level_var.set("100%")
+                self.zoom_level_var.set("50%")
 
                 # Create a canvas with scrollbars for the chart
                 v_scrollbar = ttk.Scrollbar(self.chart_container, orient='vertical')
@@ -2261,6 +2695,108 @@ Click OK to continue with an empty design library.
         """Update the design thumbnail display with current zoom level."""
         # Re-trigger the design selection to refresh the thumbnail with new zoom
         self._on_design_selected(None)
+
+    def _prompt_auto_save_current_design(self):
+        """Prompt user to save the current design when visiting My Designs tab."""
+        if not self.current_geometry or not self.current_results:
+            return
+
+        # Create the auto-save dialog
+        save_prompt = Toplevel(self.root)
+        save_prompt.title("Save Current Design")
+        save_prompt.geometry("500x250")
+        save_prompt.resizable(False, False)
+        save_prompt.transient(self.root)
+        save_prompt.grab_set()
+        save_prompt.focus_force()  # Ensure dialog gets focus
+
+        # Center the dialog
+        save_prompt.geometry("+{}+{}".format(
+            self.root.winfo_x() + self.root.winfo_width()//2 - 250,
+            self.root.winfo_y() + self.root.winfo_height()//2 - 125
+        ))
+
+        # Content
+        ttk.Label(save_prompt, text="Save Current Design to Library?",
+                 font=('Segoe UI', 12, 'bold')).pack(pady=(15, 5))
+
+        # Show current design info
+        try:
+            design_info = f"Design: {self.current_results.get('design_type', 'Unknown')} - {self.current_results.get('band_name', 'Unknown')}\n"
+            design_info += f"Frequencies: {self.current_results.get('freq1_mhz', 'N/A')}/{self.current_results.get('freq2_mhz', 'N/A')}/{self.current_results.get('freq3_mhz', 'N/A')} MHz"
+
+            info_label = ttk.Label(save_prompt, text=design_info,
+                                  font=('Segoe UI', 9))
+            info_label.pack(pady=(0, 10))
+        except:
+            pass
+
+        # Auto-generated filename suggestion
+        from datetime import datetime
+        today_date = datetime.now().strftime("%Y%m%d")
+        random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+        default_filename = f"antenna_{today_date}_{random_suffix}"
+
+        ttk.Label(save_prompt, text="Suggested filename will be auto-generated.",
+                 font=('Segoe UI', 9)).pack(pady=(0, 15))
+
+        # Buttons frame
+        button_frame = ttk.Frame(save_prompt)
+        button_frame.pack(fill='x', pady=(0, 15), padx=20)
+
+        def save_design():
+            """Save the current design and close the prompt."""
+            try:
+                # Use today's date and random suffix for automatic filename
+                from datetime import datetime
+                today_date = datetime.now().strftime("%Y%m%d")
+                random_suffix = ''.join(random.choices(string.ascii_letters + string.digits, k=5))
+                default_filename = f"antenna_{today_date}_{random_suffix}"
+
+                # Generate automatic design name
+                default_design_name = f"Auto-saved Design - {datetime.now().strftime('%Y-%m-%d %H:%M')}"
+
+                # Create metadata
+                metadata = DesignMetadata(
+                    name=default_design_name,
+                    substrate_width=float(self.substrate_width_var.get()),
+                    substrate_height=float(self.substrate_height_var.get()),
+                    trace_width_mil=float(self.trace_width_var.get())
+                )
+
+                # Save design
+                saved_path = self.design_storage.save_design(
+                    self.current_geometry, metadata, self.current_results
+                )
+
+                self._log_message(f"Auto-saved design: {default_design_name}")
+                self.status_var.set(f"Design auto-saved as: {default_design_name}")
+                self._refresh_designs_list()
+                save_prompt.destroy()
+
+            except Exception as e:
+                self._show_error(f"Failed to save design: {str(e)}")
+                save_prompt.destroy()
+
+        def skip_saving():
+            """Skip saving and close the prompt."""
+            self._log_message("Auto-save prompt dismissed - continuing to My Designs")
+            save_prompt.destroy()
+
+        # Create buttons with proper spacing
+        save_button = ttk.Button(button_frame, text="Save to Library", command=save_design)
+        save_button.pack(side='left', expand=True, padx=5)
+
+        skip_button = ttk.Button(button_frame, text="Skip for Now", command=skip_saving)
+        skip_button.pack(side='right', expand=True, padx=5)
+
+        # Bind Enter to save by default
+        save_prompt.bind('<Return>', lambda e: save_design())
+        save_prompt.bind('<Escape>', lambda e: skip_saving())
+
+        # Instruction text
+        ttk.Label(save_prompt, text="Tip: You can always save designs manually from the toolbar above",
+                 font=('Segoe UI', 8), foreground='#666666').pack(pady=(0, 10))
 
 
 def test_storage():
