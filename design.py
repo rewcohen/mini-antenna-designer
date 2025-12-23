@@ -6,6 +6,9 @@ from shapely.geometry import LineString, Point, Polygon
 from shapely.affinity import rotate, translate
 from loguru import logger
 
+# Import shared utilities
+from antenna_utils import NEC2GeometryParser, AntennaValidator
+
 class AntennaGeometryError(Exception):
     """Custom exception for geometry generation errors."""
     pass
@@ -203,16 +206,10 @@ class AntennaDesign:
         Returns:
             float: Physical length of the segment in inches
         """
-        import math
-        parts = gw_line.split()
-        if len(parts) >= 8:
-            try:
-                x1, y1, z1 = float(parts[3]), float(parts[4]), float(parts[5])
-                x2, y2, z2 = float(parts[6]), float(parts[7]), float(parts[8])
-                return math.sqrt((x2-x1)**2 + (y2-y1)**2 + (z2-z1)**2)
-            except (ValueError, IndexError):
-                return 0.0
-        return 0.0
+        try:
+            return NEC2GeometryParser.calculate_segment_length(gw_line)
+        except Exception:
+            return 0.0
 
     def generate_monopole(self, frequency_mhz: float, ground_length: float = 1.0) -> str:
         """Generate quarter-wave monopole antenna with ground plane.
@@ -1111,10 +1108,10 @@ class AdvancedMeanderTrace:
                         freq_mhz, original_idx, len(frequencies), layout_strategy, constraints
                     )
 
-                    # Generate meander for this frequency
+            # Generate meander for this frequency
                     geometry = self.generate_advanced_meander(freq_mhz, band_constraints)
 
-                    if geometry:
+                    if geometry and geometry.strip():
                         # Adjust wire tags to avoid conflicts
                         adjusted_geometry = self._adjust_wire_tags(geometry, tag_offset)
                         all_geometries.append(adjusted_geometry)
@@ -1127,7 +1124,7 @@ class AdvancedMeanderTrace:
                         freq_hz = freq_mhz * 1e6
                         # Extract geometry parameters for metrics calculation
                         geometry_params = self._extract_geometry_params(adjusted_geometry)
-                        if geometry_params:
+                        if geometry_params and isinstance(geometry_params, dict):
                             metrics = self.calculate_electrical_metrics(geometry_params, freq_hz)
                             multi_band_result['metrics'][f'band_{original_idx+1}'] = metrics
 

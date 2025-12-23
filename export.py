@@ -9,10 +9,15 @@ from datetime import datetime
 from pathlib import Path
 from loguru import logger
 import ezdxf
+from typing import Any
+from ezdxf.filemanagement import new
 from svglib.svglib import svg2rlg
 from reportlab.graphics import renderPDF
 from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
+
+# Import shared utilities
+from antenna_utils import NEC2GeometryParser, AntennaValidator
 
 class ExportError(Exception):
     """Custom exception for export failures."""
