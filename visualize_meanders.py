@@ -3,12 +3,15 @@
 Meander Pattern Visualization and Debugging Tool
 ===========================================
 Provides ASCII art and simple SVG visualization to verify meander patterns.
+
+REFACTORED: Now uses shared utilities from antenna_utils.py module.
 """
 
 import math
 import sys
 from typing import List, Tuple, Dict, Any
 from loguru import logger
+from antenna_utils import NEC2GeometryParser, AntennaVisualizer
 
 class MeanderVisualizer:
     """Visualize meander and spiral antenna patterns for debugging."""
@@ -20,80 +23,70 @@ class MeanderVisualizer:
     
     def parse_nec2_geometry(self, geometry: str) -> List[Dict[str, Any]]:
         """Parse NEC2 geometry into segment data.
-        
+
+        NOTE: This method now uses the shared NEC2GeometryParser utility
+        and converts to the dictionary format expected by this class.
+
         Args:
             geometry: NEC2 geometry string
-            
+
         Returns:
             List of segment dictionaries
         """
+        # Use shared utility
+        parsed_segments = NEC2GeometryParser.parse_geometry(geometry)
+
+        # Convert from tuple format to dict format for compatibility
         segments = []
-        lines = geometry.split('\n')
-        
-        for line in lines:
-            if not line.strip():
-                continue
-                
-            parts = line.split()
-            if len(parts) >= 8 and parts[0] == 'GW':
-                try:
-                    segment = {
-                        'tag': int(float(parts[1])),
-                        'x1': float(parts[3]),
-                        'y1': float(parts[4]),
-                        'z1': float(parts[5]),
-                        'x2': float(parts[6]),
-                        'y2': float(parts[7]),
-                        'z2': float(parts[8]),
-                        'radius': float(parts[9]) if len(parts) > 9 else 0.010,
-                        'raw': line
-                    }
-                    segments.append(segment)
-                except (ValueError, IndexError) as e:
-                    logger.warning(f"Failed to parse segment: {line} - {e}")
-                    
+        for idx, (x1, y1, x2, y2, radius) in enumerate(parsed_segments):
+            segment = {
+                'tag': idx + 1,
+                'x1': x1,
+                'y1': y1,
+                'z1': 0.0,  # Planar antenna
+                'x2': x2,
+                'y2': y2,
+                'z2': 0.0,  # Planar antenna
+                'radius': radius,
+                'raw': f"GW {idx+1} 1 {x1} {y1} 0 {x2} {y2} 0 {radius}"
+            }
+            segments.append(segment)
+
         logger.info(f"Parsed {len(segments)} segments from geometry")
         return segments
     
     def analyze_pattern(self, segments: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Analyze the meander pattern characteristics.
-        
+
+        NOTE: This method now uses shared utilities for basic calculations
+        but retains advanced analysis features specific to this visualizer.
+
         Args:
             segments: List of segment dictionaries
-            
+
         Returns:
             Analysis results
         """
         if not segments:
             return {'error': 'No segments to analyze'}
-        
-        # Calculate bounds
-        all_x = []
-        all_y = []
-        total_length = 0.0
-        
-        for seg in segments:
-            all_x.extend([seg['x1'], seg['x2']])
-            all_y.extend([seg['y1'], seg['y2']])
-            
-            # Calculate segment length
-            seg_length = math.sqrt((seg['x2']-seg['x1'])**2 + (seg['y2']-seg['y1'])**2)
-            total_length += seg_length
-        
-        min_x, max_x = min(all_x), max(all_x)
-        min_y, max_y = min(all_y), max(all_y)
-        
-        # Analyze pattern type
+
+        # Convert dict segments to tuple format for shared utility
+        tuple_segments = [(seg['x1'], seg['y1'], seg['x2'], seg['y2']) for seg in segments]
+
+        # Use shared utility for bounds and length calculation
+        bounds_tuple = NEC2GeometryParser.extract_bounds(tuple_segments)
+        min_x, min_y, max_x, max_y = bounds_tuple
+        total_length = NEC2GeometryParser.calculate_total_length(tuple_segments)
+
+        # Advanced analysis (specific to this visualizer)
         pattern_type = self._detect_pattern_type(segments)
-        
-        # Check for connectivity issues
         connectivity_issues = self._check_connectivity(segments)
-        
+
         # Calculate space utilization
         substrate_area = (max_x - min_x) * (max_y - min_y)
         trace_area = total_length * 0.010  # Assuming 10 mil trace width
         space_utilization = (trace_area / substrate_area * 100) if substrate_area > 0 else 0
-        
+
         analysis = {
             'total_segments': len(segments),
             'total_length_inches': total_length,
@@ -108,7 +101,7 @@ class MeanderVisualizer:
             'space_utilization_percent': space_utilization,
             'average_segment_length': total_length / len(segments) if segments else 0
         }
-        
+
         return analysis
     
     def _detect_pattern_type(self, segments: List[Dict[str, Any]]) -> str:

@@ -107,18 +107,19 @@ class NEC2GeometryParser:
             return []
 
     @staticmethod
-    def calculate_total_length(segments: List[Tuple[float, float, float, float, float]]) -> float:
+    def calculate_total_length(segments: List[Tuple[float, ...]]) -> float:
         """Calculate total trace length from wire segments.
-        
+
         Args:
-            segments: List of (x1, y1, x2, y2, radius) tuples
-            
+            segments: List of (x1, y1, x2, y2) or (x1, y1, x2, y2, radius) tuples
+
         Returns:
             float: Total trace length in inches
         """
         try:
             total_length = 0.0
-            for x1, y1, x2, y2, _ in segments:
+            for seg in segments:
+                x1, y1, x2, y2 = seg[0], seg[1], seg[2], seg[3]
                 segment_length = math.sqrt((x2-x1)**2 + (y2-y1)**2)
                 total_length += segment_length
             return total_length
@@ -127,12 +128,12 @@ class NEC2GeometryParser:
             return 0.0
 
     @staticmethod
-    def extract_bounds(segments: List[Tuple[float, float, float, float, float]]) -> Tuple[float, float, float, float]:
+    def extract_bounds(segments: List[Tuple[float, ...]]) -> Tuple[float, float, float, float]:
         """Calculate bounding box for wire segments.
-        
+
         Args:
-            segments: List of (x1, y1, x2, y2, radius) tuples
-            
+            segments: List of (x1, y1, x2, y2) or (x1, y1, x2, y2, radius) tuples
+
         Returns:
             Tuple of (min_x, min_y, max_x, max_y)
         """
@@ -142,7 +143,8 @@ class NEC2GeometryParser:
 
             all_x = []
             all_y = []
-            for x1, y1, x2, y2, _ in segments:
+            for seg in segments:
+                x1, y1, x2, y2 = seg[0], seg[1], seg[2], seg[3]
                 all_x.extend([x1, x2])
                 all_y.extend([y1, y2])
 
@@ -943,56 +945,151 @@ def parse_nec2_geometry(geometry: str) -> List[Tuple[float, float, float, float,
     except Exception:
         return []
 
-def draw_ascii_meander(segments: List[Tuple[float, float, float, float, float]], 
+def draw_ascii_meander(segments: List[Tuple[float, ...]],
                       width: int = 80, height: int = 25) -> str:
-    """Convenience function for ASCII meander visualization."""
+    """Convenience function for ASCII meander visualization.
+
+    Args:
+        segments: List of (x1, y1, x2, y2) or (x1, y1, x2, y2, radius) tuples
+        width: ASCII art width in characters
+        height: ASCII art height in characters
+
+    Returns:
+        ASCII art string
+    """
     try:
+        # Convert to 5-tuple format if needed
+        segments_5: List[Tuple[float, float, float, float, float]] = []
+        if len(segments) > 0:
+            if len(segments[0]) == 4:
+                for seg in segments:
+                    segments_5.append((seg[0], seg[1], seg[2], seg[3], 0.005))
+            else:
+                for seg in segments:
+                    segments_5.append((seg[0], seg[1], seg[2], seg[3], seg[4]))
+
         visualizer = AntennaVisualizer(mode='debug')
-        return visualizer.render_ascii(segments, width, height)
-    except Exception:
+        return visualizer.render_ascii(segments_5, width, height)
+    except Exception as e:
+        logger.error(f"ASCII rendering error: {str(e)}")
         return "Error rendering ASCII visualization"
 
-def generate_simple_svg(segments: List[Tuple[float, float, float, float, float]],
+def generate_simple_svg(segments: List[Tuple[float, ...]],
                        filename: str = "meander_debug.svg",
                        scale: float = 100.0) -> str:
-    """Convenience function for simple SVG generation."""
+    """Convenience function for simple SVG generation.
+
+    Args:
+        segments: List of (x1, y1, x2, y2) or (x1, y1, x2, y2, radius) tuples
+        filename: Output SVG filename
+        scale: SVG units per inch (ignored, kept for compatibility)
+
+    Returns:
+        SVG content string
+    """
     try:
+        # Convert to 5-tuple format if needed
+        segments_5: List[Tuple[float, float, float, float, float]] = []
+        if len(segments) > 0:
+            if len(segments[0]) == 4:
+                for seg in segments:
+                    segments_5.append((seg[0], seg[1], seg[2], seg[3], 0.005))
+            else:
+                for seg in segments:
+                    segments_5.append((seg[0], seg[1], seg[2], seg[3], seg[4]))
+
         visualizer = AntennaVisualizer(mode='debug')
-        svg_content = visualizer.generate_svg(segments)
-        
+        svg_content = visualizer.generate_svg(segments_5)
+
         # Write to file if filename provided
         if filename:
             with open(filename, 'w') as f:
                 f.write(svg_content)
             logger.info(f"SVG written to: {filename}")
-        
+
         return svg_content
-    except Exception:
+    except Exception as e:
+        logger.error(f"SVG generation error: {str(e)}")
         return '<svg><text>Error generating SVG</text></svg>'
 
-def analyze_pattern(segments: List[Tuple[float, float, float, float, float]]) -> Dict[str, Any]:
-    """Convenience function for pattern analysis."""
+def analyze_pattern(segments: List[Tuple[float, ...]]) -> Dict[str, Any]:
+    """Convenience function for pattern analysis.
+
+    Args:
+        segments: List of (x1, y1, x2, y2, radius) tuples OR (x1, y1, x2, y2) tuples
+
+    Returns:
+        Dictionary with pattern analysis including:
+        - total_length: Total trace length in inches
+        - bounds: (min_x, min_y, max_x, max_y) tuple
+        - dimensions: (width, height) tuple in inches
+        - segment_count: Number of wire segments
+        - horizontal_count: Number of horizontal segments
+        - vertical_count: Number of vertical segments
+        - pattern_type: Pattern type classification
+    """
     try:
+        # Handle both 4-tuple and 5-tuple segment formats
+        processed_segments = []
+        if len(segments) > 0:
+            first_segment = segments[0]
+            if len(first_segment) == 4:
+                # 4-tuple format: (x1, y1, x2, y2) - add default radius
+                for seg in segments:
+                    processed_segments.append((seg[0], seg[1], seg[2], seg[3], 0.005))
+            else:
+                # 5-tuple format: (x1, y1, x2, y2, radius)
+                processed_segments = list(segments)
+        else:
+            processed_segments = []
+
         visualizer = AntennaVisualizer(mode='analysis')
+
+        # Calculate bounds and total length
+        bounds = NEC2GeometryParser.extract_bounds(processed_segments)
+        min_x, min_y, max_x, max_y = bounds
+        total_length = NEC2GeometryParser.calculate_total_length(processed_segments)
+
+        # Count horizontal vs vertical segments
+        horizontal = 0
+        vertical = 0
+        for seg in processed_segments:
+            x1, y1, x2, y2 = seg[0], seg[1], seg[2], seg[3]
+            dx = abs(x2 - x1)
+            dy = abs(y2 - y1)
+            if dy < 0.01:  # Horizontal (within tolerance)
+                horizontal += 1
+            elif dx < 0.01:  # Vertical (within tolerance)
+                vertical += 1
+
         # Use the pattern detection methods from the visualizer
-        pattern_type = visualizer._detect_pattern_type(segments)
-        connectivity = visualizer._check_connectivity(segments)
-        space_utilization = visualizer._calculate_space_utilization(segments, 1.0, 1.0)  # Default size
-        
+        pattern_type = visualizer._detect_pattern_type(processed_segments)
+        connectivity = visualizer._check_connectivity(processed_segments)
+        space_utilization = visualizer._calculate_space_utilization(processed_segments, max_x - min_x, max_y - min_y)
+
         return {
+            'total_length': total_length,
+            'bounds': bounds,
+            'dimensions': (max_x - min_x, max_y - min_y),
+            'segment_count': len(processed_segments),
+            'horizontal_count': horizontal,
+            'vertical_count': vertical,
             'pattern_type': pattern_type,
             'connectivity': connectivity,
-            'space_utilization_percent': space_utilization,
-            'segment_count': len(segments),
-            'total_length': NEC2GeometryParser.calculate_total_length(segments)
+            'space_utilization_percent': space_utilization
         }
-    except Exception:
+    except Exception as e:
+        logger.error(f"Pattern analysis error: {str(e)}")
         return {
+            'total_length': 0,
+            'bounds': (0, 0, 0, 0),
+            'dimensions': (0, 0),
+            'segment_count': 0,
+            'horizontal_count': 0,
+            'vertical_count': 0,
             'pattern_type': 'Error',
             'connectivity': 'Error',
-            'space_utilization_percent': 0,
-            'segment_count': 0,
-            'total_length': 0
+            'space_utilization_percent': 0
         }
 
 def validate_for_etching(geometry: str, constraints: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
