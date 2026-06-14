@@ -4,19 +4,24 @@ import sys
 import traceback
 from loguru import logger
 
-def _use_new_gui() -> bool:
-    """New wizard GUI when ``--new`` is passed or ANTENNA_GUI=new; else legacy ui."""
-    return "--new" in sys.argv or os.environ.get("ANTENNA_GUI", "").lower() == "new"
+def _use_legacy_gui() -> bool:
+    """Legacy ui.py only when explicitly requested; the wizard GUI is the default.
+
+    Opt in with ``--legacy`` / ``--old`` or ANTENNA_GUI=legacy|old|ui.
+    """
+    flag = os.environ.get("ANTENNA_GUI", "").lower()
+    return ("--legacy" in sys.argv or "--old" in sys.argv
+            or flag in ("legacy", "old", "ui"))
 
 def main():
     """Application entry point with comprehensive error handling."""
     try:
-        if _use_new_gui():
+        if _use_legacy_gui():
+            from ui import main as gui_main
+            logger.info("Starting Mini Antenna Designer (legacy UI)")
+        else:
             from app import main as gui_main
             logger.info("Starting Mini Antenna Designer (wizard GUI)")
-        else:
-            from ui import main as gui_main
-            logger.info("Starting Mini Antenna Designer application")
         gui_main()
 
     except ImportError as e:

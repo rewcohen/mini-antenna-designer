@@ -3,11 +3,11 @@
 Layout:  toolbar  /  [step rail | active-step panel | SVG canvas | properties]
          /  status bar.
 
-New front end; ``ui.py`` remains as a fallback until parity. Run with
-``python app.py``.
+Default front end (``python main.py``); the legacy ``ui.py`` is available via
+``python main.py --legacy``. Run this module directly with ``python app.py``.
 """
 import threading
-from tkinter import (BOTTOM, X, W, SUNKEN, LEFT, RIGHT, BOTH, Y, TOP, StringVar,
+from tkinter import (BOTTOM, X, W, SUNKEN, LEFT, RIGHT, BOTH, Y, TOP, Menu, StringVar,
                      filedialog, messagebox)
 import ttkbootstrap as ttk
 from ttkbootstrap import Style
@@ -58,12 +58,17 @@ class AntennaDesignerApp:
         self.status_var = StringVar(value="Ready")
         self._busy = False
 
+        self._build_menu()
         self._build_toolbar()
         self._build_statusbar()
         self._build_workspace()
 
         self.session.subscribe(self._on_session)
         self._bind_keys()
+        # Catch otherwise-unhandled Tk callback errors so a single bad action
+        # logs + warns instead of silently dying or spamming the console.
+        self.root.report_callback_exception = self._on_tk_error
+        self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         logger.info("Wizard GUI initialized")
 
     def _bind_keys(self):
@@ -164,10 +169,9 @@ class AntennaDesignerApp:
                 substrate_height=self.session.substrate_height)
             # Carry the chosen material onto the meander instance so the generator
             # reflects the user's substrate (epsilon + thickness in inches, matching
-            # AdvancedMeanderTrace's own units). NOTE: the current resonance model
-            # (design.calculate_target_length) sizes to free-space lambda/2 x coupling
-            # factor and does not yet apply effective permittivity, so material does
-            # not change trace length until a velocity-factor term is added.
+            # AdvancedMeanderTrace's own units). design.calculate_target_length now
+            # applies the velocity factor (1/sqrt(er_eff)), so material genuinely
+            # shortens traces on higher-permittivity substrates.
             generator.advanced_meander.substrate_epsilon = self.session.substrate_epsilon
             generator.advanced_meander.substrate_thickness = self.session.substrate_thickness_mm / 25.4
             result = generator.generate_design(
@@ -298,6 +302,113 @@ class AntennaDesignerApp:
                     f"{f[0]:g}/{f[1]:g}/{f[2]:g} MHz | "
                     f"{self.session.substrate_width:g}×{self.session.substrate_height:g} in | "
                     f"{self.session.trace_width_mil:.0f} mil")
+
+    # --- menu bar ---
+    def _build_menu(self):
+        menubar = Menu(self.root)
+
+        filem = Menu(menubar, tearoff=0)
+        filem.add_command(label="New", accelerator="Ctrl+N", command=self._new)
+        filem.add_command(label="Open Library…", accelerator="Ctrl+O", command=self._open_library)
+        filem.add_command(label="Save to Library", accelerator="Ctrl+S", command=self._save_design)
+        filem.add_separator()
+        filem.add_command(label="Save Geometry (.nec)…", command=self._save_geometry)
+        filem.add_command(label="Load Geometry (.nec)…", command=self._load_geometry)
+        exportm = Menu(filem, tearoff=0)
+        for fmt in ("svg", "dxf", "pdf"):
+            exportm.add_command(label=fmt.upper(), command=lambda f=fmt: self._export(f))
+        filem.add_cascade(label="Export", menu=exportm)
+        filem.add_separator()
+        filem.add_command(label="Exit", command=self._on_close)
+        menubar.add_cascade(label="File", menu=filem)
+
+        toolsm = Menu(menubar, tearoff=0)
+        toolsm.add_command(label="Antenna Wizard…", command=self._open_wizard)
+        toolsm.add_command(label="Tune…", command=self._open_tune)
+        menubar.add_cascade(label="Tools", menu=toolsm)
+
+        viewm = Menu(menubar, tearoff=0)
+        viewm.add_command(label="Toggle Theme", command=self._toggle_theme)
+        viewm.add_command(label="View Logs…", command=self._view_logs)
+        menubar.add_cascade(label="View", menu=viewm)
+
+        helpm = Menu(menubar, tearoff=0)
+        helpm.add_command(label="User Guide…", command=self._help_guide)
+        helpm.add_command(label="About…", command=self._about)
+        menubar.add_cascade(label="Help", menu=helpm)
+
+        self.root.config(menu=menubar)
+
+    # --- geometry file I/O ---
+    def _save_geometry(self):
+        if not self.session.has_design:
+            messagebox.showwarning("Nothing to save", "Generate a design first.")
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".nec", initialfile="antenna.nec",
+            filetypes=[("NEC2 geometry", "*.nec"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8") as f:
+                f.write(self.session.geometry or "")
+            self.status_var.set(f"Saved geometry → {path}")
+        except Exception:
+            logger.exception("save geometry failed")
+            messagebox.showerror("Save failed", "Could not write the .nec file. See the log for details.")
+
+    def _load_geometry(self):
+        path = filedialog.askopenfilename(
+            filetypes=[("NEC2 geometry", "*.nec"), ("All files", "*.*")])
+        if not path:
+            return
+        try:
+            with open(path, encoding="utf-8", errors="replace") as f:
+                geom = f.read()
+        except Exception:
+            logger.exception("load geometry failed")
+            messagebox.showerror("Load failed", "Could not read that file. See the log for details.")
+            return
+        if not geom.strip():
+            messagebox.showwarning("Empty file", "That file has no geometry.")
+            return
+        self.session.geometry = geom
+        self.session.results = {"design_type": "imported", "metrics": {},
+                                "validation": {}, "success": True}
+        self.session.svg_metadata = {"band_name": "Imported",
+                                     "frequencies": self.session.frequencies_mhz()}
+        self.status_var.set(f"Loaded geometry from {path}")
+        self.session.notify(EVT_GENERATED)
+
+    # --- help / logs / lifecycle ---
+    def _view_logs(self):
+        from gui.logs_view import LogsDialog
+        LogsDialog(self.root)
+
+    def _help_guide(self):
+        from gui.help_view import show_user_guide
+        show_user_guide(self.root)
+
+    def _about(self):
+        from gui.help_view import show_about
+        show_about(self.root)
+
+    def _on_tk_error(self, exc, val, tb):
+        """Last-resort handler for unhandled Tk callback exceptions."""
+        import traceback as _tb
+        logger.error("Unhandled UI error:\n" + "".join(_tb.format_exception(exc, val, tb)))
+        try:
+            self.status_var.set("Something went wrong — see View → Logs")
+            messagebox.showerror(
+                "Something went wrong",
+                "An unexpected error occurred. The action was cancelled; the app is "
+                "still running.\nSee Help → View Logs (View menu) for details.")
+        except Exception:
+            pass
+
+    def _on_close(self):
+        logger.info("Application closing")
+        self.root.destroy()
 
     def _toggle_theme(self):
         self.dark_mode = not self.dark_mode
