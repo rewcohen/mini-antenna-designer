@@ -107,16 +107,16 @@ class AntennaDesignGenerator:
             return 'helical_spiral'  # For GNSS/satellite
         # Removed TV_BROADCAST hardcoding - let it use ratio-based selection for compact designs
 
-        # Determine based on frequency separation
-        if avg_ratio < 1.8:  # Close frequencies
-            logger.info(f"  Selected: advanced_meander_tri_band (close frequencies, ratio < 1.8)")
-            return 'advanced_meander_tri_band'  # Use advanced meanders for close frequencies
-        elif avg_ratio <= 4.0:  # Medium separation
-            logger.info(f"  Selected: advanced_meander_dual (medium separation, 1.8 <= ratio <= 4.0)")
-            return 'advanced_meander_dual'  # Advanced meanders for medium separation
+        # Determine based on frequency separation (average of pairwise ratios).
+        if avg_ratio < 1.5:  # Close frequencies
+            logger.info(f"  Selected: advanced_meander_tri_band (close frequencies, ratio < 1.5)")
+            return 'advanced_meander_tri_band'  # Closely spaced bands
+        elif avg_ratio < 3.0:  # Medium separation
+            logger.info(f"  Selected: advanced_meander_dual (medium separation, 1.5 <= ratio < 3.0)")
+            return 'advanced_meander_dual'  # Moderately spaced bands
         else:  # Large separation
-            logger.info(f"  Selected: advanced_meander_compound (large separation, ratio > 4.0)")
-            return 'advanced_meander_compound'  # Compound advanced meanders
+            logger.info(f"  Selected: advanced_meander_compound (large separation, ratio >= 3.0)")
+            return 'advanced_meander_compound'  # Widely spaced bands
 
     def _generate_geometry_for_type(self, design_type: str, f1: float, f2: float, f3: float, 
                                    trace_width_inches: float = None, add_contact_pads: bool = False) -> str:
@@ -571,140 +571,77 @@ class AntennaDesignGenerator:
             return ""
 
     def _generate_advanced_meander_tri_band(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
-        """Generate advanced meander design for tri-band operation."""
+        """Generate a separate meandered resonator for each of the (closely spaced) bands."""
         try:
-            logger.info(f"Generating advanced meander tri-band design for {f1}/{f2}/{f3} MHz")
-            
-            # Use multi-band meander generation for optimal performance
+            logger.info(f"Generating tri-band design (separate resonators) for {f1}/{f2}/{f3} MHz")
             frequencies = [f for f in [f1, f2, f3] if f > 0]
-            
-            if len(frequencies) < 2:
-                logger.warning("Insufficient valid frequencies for tri-band meander")
+            if not frequencies:
+                logger.warning("No valid frequencies for tri-band meander")
                 return [self.designer.generate_dipole(f1, use_meandering=True)]
-            
-            # Generate multi-band meanders with optimized constraints
+
             constraints = {
-                'substrate_epsilon': 4.3,  # FR-4
-                'substrate_thickness': 0.0016,  # 1.6mm
-                'coupling_factor': 0.88,  # Optimized for tri-band
+                'trace_width': trace_width_inches if trace_width_inches is not None else 0.008,
                 'bend_radius': 0.0008,  # 0.8mm for good Q-factor
+                'coupling_factor': 0.88,
             }
-            
-            multi_band_result = self.advanced_meander.generate_multi_band_meanders(frequencies, constraints)
-            
-            if multi_band_result.get('combined_geometry'):
-                quality_score = multi_band_result.get('optimization_summary', {}).get('design_quality_score', 0)
-                logger.info(f"Advanced meander tri-band generated: {quality_score:.1f} quality score")
-                return [multi_band_result['combined_geometry']]
-            else:
-                # Fallback to individual meanders
-                geometries = []
-                for freq in frequencies:
-                    geom = self.advanced_meander.generate_advanced_meander(freq, constraints)
-                    if geom:
-                        geometries.append(geom)
-                return geometries
-                
+            geometry = self.advanced_meander.generate_separate_band_resonators(frequencies, constraints)
+            if geometry:
+                logger.info(f"Tri-band: generated {len(frequencies)} separate resonators")
+                return [geometry]
+            return [self.designer.generate_dipole(f1, use_meandering=True)]
+
         except Exception as e:
             logger.error(f"Advanced meander tri-band generation failed: {str(e)}")
             return [self.designer.generate_dipole(f1, use_meandering=True)]
-    
+
     def _generate_advanced_meander_dual(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
-        """Generate advanced meander design for dual-band operation."""
+        """Generate a separate meandered resonator for each (moderately spaced) band."""
         try:
-            logger.info(f"Generating advanced meander dual-band design for {f1}/{f2}/{f3} MHz")
-            
-            # Select two most important frequencies
-            frequencies = [f for f in [f1, f2, f3] if f > 0][:2]
-            
-            if len(frequencies) < 2:
-                logger.warning("Insufficient valid frequencies for dual-band meander")
+            logger.info(f"Generating dual-band design (separate resonators) for {f1}/{f2}/{f3} MHz")
+            frequencies = [f for f in [f1, f2, f3] if f > 0]
+            if not frequencies:
+                logger.warning("No valid frequencies for dual-band meander")
                 return [self.designer.generate_dipole(f1, use_meandering=True)]
-            
-            # Generate dual-band meanders with optimized constraints
+
             constraints = {
-                'substrate_epsilon': 4.3,
-                'substrate_thickness': 0.0016,
-                'coupling_factor': 0.90,  # Standard coupling for dual-band
+                'trace_width': trace_width_inches if trace_width_inches is not None else 0.008,
                 'bend_radius': 0.001,  # 1mm for balanced performance
+                'coupling_factor': 0.90,
             }
-            
-            multi_band_result = self.advanced_meander.generate_multi_band_meanders(frequencies, constraints)
-            
-            if multi_band_result.get('combined_geometry'):
-                quality_score = multi_band_result.get('optimization_summary', {}).get('design_quality_score', 0)
-                logger.info(f"Advanced meander dual-band generated: {quality_score:.1f} quality score")
-                return [multi_band_result['combined_geometry']]
-            else:
-                # Fallback to individual meanders
-                geometries = []
-                for freq in frequencies:
-                    geom = self.advanced_meander.generate_advanced_meander(freq, constraints)
-                    if geom:
-                        geometries.append(geom)
-                return geometries
-                
+            geometry = self.advanced_meander.generate_separate_band_resonators(frequencies, constraints)
+            if geometry:
+                logger.info(f"Dual-band: generated {len(frequencies)} separate resonators")
+                return [geometry]
+            return [self.designer.generate_dipole(f1, use_meandering=True)]
+
         except Exception as e:
             logger.error(f"Advanced meander dual-band generation failed: {str(e)}")
             return [self.designer.generate_dipole(f1, use_meandering=True)]
     
     def _generate_advanced_meander_compound(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
-        """Generate compound advanced meander design for widely separated frequencies."""
+        """Generate a separate meandered resonator for each widely separated band.
+
+        Each band gets its own element in its own substrate stripe, sized to its
+        half-wave - the right approach when the bands differ greatly in wavelength.
+        """
         try:
-            logger.info(f"Generating advanced meander compound design for {f1}/{f2}/{f3} MHz" +
+            logger.info(f"Generating compound design (separate resonators) for {f1}/{f2}/{f3} MHz" +
                        (f" with custom trace width {trace_width_inches*1000:.1f} mil" if trace_width_inches else ""))
+            frequencies = [f for f in [f1, f2, f3] if f > 0]
+            if not frequencies:
+                logger.warning("No valid frequencies for compound meander")
+                return [self.designer.generate_dipole(f1, use_meandering=True, trace_width_inches=trace_width_inches)]
 
-            geometries = []
-
-            # Use custom trace width if provided, otherwise use frequency-dependent defaults
-            default_trace_width = trace_width_inches if trace_width_inches is not None else 0.001
-
-            # Low frequency: Large meander with high coupling
-            if f1 > 0:
-                low_freq_constraints = {
-                    'substrate_epsilon': 4.3,
-                    'substrate_thickness': 0.0016,
-                    'coupling_factor': 0.95,  # High coupling for low freq
-                    'bend_radius': 0.0015,  # Larger bends for low freq
-                    'trace_width': trace_width_inches if trace_width_inches is not None else 0.0015,  # Use custom or wider traces for low freq
-                }
-                geom1 = self.advanced_meander.generate_advanced_meander(f1, low_freq_constraints)
-                if geom1:
-                    geometries.append(geom1)
-
-            # Mid frequency: Standard meander
-            if f2 > 0:
-                mid_freq_constraints = {
-                    'substrate_epsilon': 4.3,
-                    'substrate_thickness': 0.0016,
-                    'coupling_factor': 0.90,  # Standard coupling
-                    'bend_radius': 0.001,  # Standard bends
-                    'trace_width': trace_width_inches if trace_width_inches is not None else 0.001,  # Use custom or standard traces for mid freq
-                }
-                geom2 = self.advanced_meander.generate_advanced_meander(f2, mid_freq_constraints)
-                if geom2:
-                    geometries.append(geom2)
-
-            # High frequency: Compact meander with low coupling
-            if f3 > 0:
-                high_freq_constraints = {
-                    'substrate_epsilon': 4.3,
-                    'substrate_thickness': 0.0016,
-                    'coupling_factor': 0.85,  # Low coupling for high freq
-                    'bend_radius': 0.0005,  # Tight bends for high freq
-                    'trace_width': trace_width_inches if trace_width_inches is not None else 0.0005,  # Use custom or narrow traces for high freq
-                }
-                geom3 = self.advanced_meander.generate_advanced_meander(f3, high_freq_constraints)
-                if geom3:
-                    geometries.append(geom3)
-
-            if geometries:
-                logger.info(f"Advanced meander compound generated: {len(geometries)} frequency-optimized elements")
-            else:
-                # Fallback
-                geometries = [self.designer.generate_dipole(f1, use_meandering=True, trace_width_inches=trace_width_inches)]
-
-            return geometries
+            constraints = {
+                'trace_width': trace_width_inches if trace_width_inches is not None else 0.008,
+                'bend_radius': 0.001,
+                'coupling_factor': 0.90,
+            }
+            geometry = self.advanced_meander.generate_separate_band_resonators(frequencies, constraints)
+            if geometry:
+                logger.info(f"Compound: generated {len(frequencies)} separate resonators")
+                return [geometry]
+            return [self.designer.generate_dipole(f1, use_meandering=True, trace_width_inches=trace_width_inches)]
 
         except Exception as e:
             logger.error(f"Advanced meander compound generation failed: {str(e)}")

@@ -1992,19 +1992,22 @@ class AdvancedMeanderTrace:
 
     def _generate_serpentine_fill(self, target_length: float, max_x: float, max_y: float,
                                   trace_width: float, bend_radius: float = 0.0008,
-                                  start_tag: int = 1) -> tuple:
+                                  start_tag: int = 1, x_center: float = 0.0,
+                                  y_center: float = 0.0) -> tuple:
         """Generate a regular serpentine (boustrophedon) meander of a target length.
 
         Lays full-width horizontal lanes connected by short vertical jogs, forming a
         regular comb. The number of lanes is chosen so the total conductor length
         (horizontal lanes + vertical jogs) equals ``target_length``; the final lane is
         truncated to land on the target as closely as the geometry allows. Lanes are
-        spread evenly across the full substrate height so the pattern fills the board
-        and looks regular rather than random.
+        spread evenly across the available height so the pattern fills its region and
+        looks regular rather than random.
 
-        If the substrate cannot physically hold ``target_length`` it is filled to
-        capacity and a warning is logged (the antenna will then resonate above the
-        intended frequency). All coordinates are in inches, centred on the origin.
+        ``max_x``/``max_y`` are half-extents of the region and ``x_center``/``y_center``
+        its centre, so the same routine can fill the whole board or one stacked stripe
+        of a separate-resonator-per-band layout. If the region cannot hold
+        ``target_length`` it is filled to capacity and a warning is logged. All
+        coordinates are in inches.
 
         Returns:
             tuple: (list of GW card strings, achieved conductor length in inches)
@@ -2025,23 +2028,25 @@ class AdvancedMeanderTrace:
 
             if lanes_needed > max_lanes:
                 capacity = max_lanes * lane_width + (max_lanes - 1) * min_pitch
-                logger.warning(f"Serpentine fill: target {target_length:.2f}\" exceeds substrate "
+                logger.warning(f"Serpentine fill: target {target_length:.2f}\" exceeds region "
                                f"capacity {capacity:.2f}\" ({max_lanes} lanes max) - filling fully; "
                                f"antenna will resonate above the intended frequency")
                 lanes_needed = max_lanes
 
-            # Spread the needed lanes evenly over the full height (but never tighter
-            # than the minimum spacing).
+            # Spread the needed lanes evenly over the available height (but never
+            # tighter than the minimum spacing).
             if lanes_needed > 1:
                 pitch = max(min_pitch, usable_height / (lanes_needed - 1))
             else:
                 pitch = 0.0
 
+            top = y_center + max_y          # region top edge
+            bottom = y_center - max_y       # region bottom edge
             geometry = []
             tag = start_tag
             current_length = 0.0
-            y = max_y                       # start at the top edge
-            x = -max_x                      # start at the left edge
+            y = top
+            x = x_center - max_x            # start at the left edge
             direction = 1                   # +1 = rightward
 
             for lane in range(lanes_needed):
@@ -2059,7 +2064,7 @@ class AdvancedMeanderTrace:
 
                 # Vertical jog to the next lane (skip after the last lane / at target).
                 next_y = y - pitch
-                if lane == lanes_needed - 1 or next_y < -max_y - 1e-6 or current_length >= target_length:
+                if lane == lanes_needed - 1 or next_y < bottom - 1e-6 or current_length >= target_length:
                     break
                 jog = min(pitch, target_length - current_length)
                 geometry.append(f"GW {tag} 1 {x:.4f} {y:.4f} 0 "
@@ -2079,3 +2084,62 @@ class AdvancedMeanderTrace:
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
             return [], 0.0
+
+    def generate_separate_band_resonators(self, frequencies: List[float],
+                                          constraints: Dict[str, Any] = None) -> str:
+        """Generate one independent meandered resonator per band.
+
+        This is how real multiband planar antennas are built: each frequency gets
+        its own element sized to that band's half-wave, rather than one shared trace.
+        The substrate height is split into horizontal stripes (one per band, widest
+        band on top), and each stripe is filled with a serpentine sized to its own
+        resonant length. Elements are separated by a small gap to limit inter-band
+        coupling.
+
+        Args:
+            frequencies: Target frequencies in MHz.
+            constraints: Optional design constraints (trace_width, bend_radius).
+
+        Returns:
+            str: Combined NEC2 GW geometry (one resonator per band, inches).
+        """
+        try:
+            constraints = constraints or {}
+            valid = sorted([f for f in frequencies if f > 0])  # low->high (longest->shortest)
+            if not valid:
+                logger.warning("No valid frequencies for resonator generation")
+                return ""
+
+            trace_width = constraints.get('trace_width', 0.008)
+            bend_radius = constraints.get('bend_radius', 0.0008)
+            margin = 0.05
+
+            max_x = self.substrate_width / 2 - margin
+            usable_height = self.substrate_height - 2 * margin
+            n = len(valid)
+            stripe_h = usable_height / n
+            gap = min(trace_width * 4, stripe_h * 0.2)   # guard band between resonators
+            stripe_half = max((stripe_h - gap) / 2, trace_width * 1.5)
+            top_usable = self.substrate_height / 2 - margin
+
+            geometry = []
+            tag = 1
+            for i, freq in enumerate(valid):
+                target = self.extract_target_length(freq)        # half-wave (inches)
+                center_y = top_usable - stripe_h * (i + 0.5)
+                segs, achieved = self._generate_serpentine_fill(
+                    target_length=target, max_x=max_x, max_y=stripe_half,
+                    trace_width=trace_width, bend_radius=bend_radius,
+                    start_tag=tag, x_center=0.0, y_center=center_y
+                )
+                if segs:
+                    geometry.extend(segs)
+                    tag += len(segs)
+                    logger.info(f"Resonator {i+1}/{n}: {freq:.0f}MHz target={target:.2f}\" "
+                               f"achieved={achieved:.2f}\" at y={center_y:.2f}\"")
+
+            return "\n".join(geometry)
+
+        except Exception as e:
+            logger.error(f"Separate band resonator generation failed: {str(e)}")
+            return ""
