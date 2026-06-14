@@ -20,24 +20,28 @@ class AntennaDesignGenerator:
         self.advanced_meander = AdvancedMeanderTrace(substrate_width=substrate_width, substrate_height=substrate_height)
         logger.info(f"Antenna design generator initialized with advanced meander capability for {substrate_width}x{substrate_height} inch substrate")
 
-    def generate_design(self, frequency_band: FrequencyBand, trace_width_inches: float = None) -> Dict:
+    def generate_design(self, frequency_band: FrequencyBand, trace_width_inches: float = None, 
+                       add_contact_pads: bool = False) -> Dict:
         """Generate antenna design for given frequency band.
 
         Args:
             frequency_band: Frequency band with tri-band frequencies
+            trace_width_inches: Custom trace width in inches (optional)
+            add_contact_pads: Whether to add contact pads for soldering
 
         Returns:
             dict: Complete design with geometry, metrics, and validation
         """
         try:
             f1, f2, f3 = frequency_band.frequencies
-            logger.info(f"Generating design for {frequency_band.name}: {f1}/{f2}/{f3} MHz")
+            logger.info(f"Generating design for {frequency_band.name}: {f1}/{f2}/{f3} MHz "
+                       f"{'with contact pads' if add_contact_pads else 'without contact pads'}")
 
             # Analyze frequency relationships
             design_type = self._determine_design_type(f1, f2, f3, frequency_band)
 
             # Generate geometry based on frequency relationships
-            geometry = self._generate_geometry_for_type(design_type, f1, f2, f3, trace_width_inches)
+            geometry = self._generate_geometry_for_type(design_type, f1, f2, f3, trace_width_inches, add_contact_pads)
 
             # Validate fits substrate
             validation = self._validate_design(geometry)
@@ -57,7 +61,8 @@ class AntennaDesignGenerator:
                 'success': validation['within_bounds'] or not any(
                     issue.startswith('X extent') or issue.startswith('Y extent')
                     for issue in validation.get('bound_violations', [])
-                )
+                ),
+                'contact_pads_added': add_contact_pads
             }
 
             logger.info(f"Design generation completed: {design_type} with {'success' if design_result['success'] else 'issues'}")
@@ -70,7 +75,8 @@ class AntennaDesignGenerator:
                 'success': False,
                 'error': str(e),
                 'geometry': "",
-                'design_type': 'error'
+                'design_type': 'error',
+                'contact_pads_added': add_contact_pads
             }
 
     def _determine_design_type(self, f1: float, f2: float, f3: float,
@@ -112,7 +118,8 @@ class AntennaDesignGenerator:
             logger.info(f"  Selected: advanced_meander_compound (large separation, ratio > 4.0)")
             return 'advanced_meander_compound'  # Compound advanced meanders
 
-    def _generate_geometry_for_type(self, design_type: str, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> str:
+    def _generate_geometry_for_type(self, design_type: str, f1: float, f2: float, f3: float, 
+                                   trace_width_inches: float = None, add_contact_pads: bool = False) -> str:
         """Generate NEC2 geometry for specific design type."""
         geometrics = []
 
@@ -121,25 +128,41 @@ class AntennaDesignGenerator:
         if design_type == 'broadband_dipole':
             # Single broadband dipole arms tuned for center frequency
             center_freq = (f1 + f2 + f3) / 3
-            geom = self.designer.generate_dipole(center_freq, length_ratio=1.0)
+            if add_contact_pads:
+                geom = self.designer.generate_dipole_with_pads(center_freq, length_ratio=1.0, 
+                                                             use_meandering=True, add_contact_pads=True)
+            else:
+                geom = self.designer.generate_dipole(center_freq, length_ratio=1.0)
             geometrics.append(geom)
 
         elif design_type == 'dual_element':
             # Monopole + dipole combination
-            geom1 = self.designer.generate_monopole(f1)
-            geom2 = self.designer.generate_dipole(f2)
+            if add_contact_pads:
+                geom1 = self.designer.generate_monopole_with_pads(f1, add_contact_pads=True)
+                geom2 = self.designer.generate_dipole_with_pads(f2, add_contact_pads=True)
+            else:
+                geom1 = self.designer.generate_monopole(f1)
+                geom2 = self.designer.generate_dipole(f2)
             geometrics.extend([geom1, geom2])
 
         elif design_type == 'tri_compound_spiral':
             # Tri-element with spiral loading
-            geom1 = self.designer.generate_monopole(f1)
-            geom2 = self.designer.generate_dipole(f2)
-            geom3 = self.designer.generate_spiral_coil(f3, turns=3)
+            if add_contact_pads:
+                geom1 = self.designer.generate_monopole_with_pads(f1, add_contact_pads=True)
+                geom2 = self.designer.generate_dipole_with_pads(f2, add_contact_pads=True)
+                geom3 = self.designer.generate_spiral_coil_with_pads(f3, turns=3, add_contact_pads=True)
+            else:
+                geom1 = self.designer.generate_monopole(f1)
+                geom2 = self.designer.generate_dipole(f2)
+                geom3 = self.designer.generate_spiral_coil(f3, turns=3)
             geometrics.extend([geom1, geom2, geom3])
 
         elif design_type == 'helical_spiral':
             # Helical design for satellite applications
-            geom1 = self.designer.generate_spiral_coil(f1, turns=5, spacing=0.005)
+            if add_contact_pads:
+                geom1 = self.designer.generate_spiral_coil_with_pads(f1, turns=5, spacing=0.005, add_contact_pads=True)
+            else:
+                geom1 = self.designer.generate_spiral_coil(f1, turns=5, spacing=0.005)
             geometrics.append(geom1)
 
         elif design_type == 'broadband_log':
@@ -160,7 +183,11 @@ class AntennaDesignGenerator:
 
         else:
             # Default to tri-compound
-            geometrics.append(self.designer.generate_tri_band_geometry(f1, f2, f3))
+            if add_contact_pads:
+                geom = self.designer.generate_tri_band_geometry_with_pads(f1, f2, f3, add_contact_pads=True)
+            else:
+                geom = self.designer.generate_tri_band_geometry(f1, f2, f3)
+            geometrics.append(geom)
 
         # Validate geometries before combining
         valid_geometries = []

@@ -1,10 +1,19 @@
 """Antenna geometry generation for 2D planar designs."""
+import sys
 from typing import List, Tuple, Optional, Dict, Any
 import numpy as np
 import math
 from shapely.geometry import LineString, Point, Polygon
 from shapely.affinity import rotate, translate
 from loguru import logger
+
+# Windows consoles default to cp1252 and crash on the emoji this app prints;
+# force UTF-8 so stdout/stderr never raise a 'charmap' codec error.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, ValueError):
+        pass
 
 class AntennaGeometryError(Exception):
     """Custom exception for geometry generation errors."""
@@ -213,6 +222,464 @@ class AntennaDesign:
             except (ValueError, IndexError):
                 return 0.0
         return 0.0
+
+    def generate_contact_pad(self, center_x: float, center_y: float, trace_width: float) -> str:
+        """Generate a square contact pad for soldering at connection points.
+
+        Args:
+            center_x: X coordinate of pad center
+            center_y: Y coordinate of pad center
+            trace_width: Width of the trace (pad will be 2x this width)
+
+        Returns:
+            str: NEC2 geometry cards for the square contact pad
+        """
+        try:
+            geometry = []
+            gw_tag = 1000  # High tag number to avoid conflicts with antenna elements
+            
+            # Calculate pad dimensions
+            pad_width = trace_width * 2.0  # Square pad with 2x trace width
+            half_width = pad_width / 2.0
+            
+            # Create square pad using 4 wire segments (outline)
+            # Top side
+            geometry.append(f"GW {gw_tag} 1 {center_x - half_width:.4f} {center_y + half_width:.4f} 0 "
+                           f"{center_x + half_width:.4f} {center_y + half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Right side
+            geometry.append(f"GW {gw_tag} 1 {center_x + half_width:.4f} {center_y + half_width:.4f} 0 "
+                           f"{center_x + half_width:.4f} {center_y - half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Bottom side
+            geometry.append(f"GW {gw_tag} 1 {center_x + half_width:.4f} {center_y - half_width:.4f} 0 "
+                           f"{center_x - half_width:.4f} {center_y - half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Left side
+            geometry.append(f"GW {gw_tag} 1 {center_x - half_width:.4f} {center_y - half_width:.4f} 0 "
+                           f"{center_x - half_width:.4f} {center_y + half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            logger.info(f"Generated contact pad at ({center_x:.3f}, {center_y:.3f}): "
+                       f"{pad_width*1000:.1f} mil square, {trace_width*1000:.1f} mil trace width")
+            
+            return "\n".join(geometry)
+            
+        except Exception as e:
+            logger.error(f"Contact pad generation failed: {str(e)}")
+            return ""
+
+    def generate_dual_contact_pads(self, trace_width: float, pad_spacing: float = 0.1) -> str:
+        """Generate dual contact pads for signal and ground connections.
+
+        Args:
+            trace_width: Width of the trace (pads will be 2x this width)
+            pad_spacing: Distance between signal and ground pads in inches
+
+        Returns:
+            str: NEC2 geometry cards for dual contact pads (signal + ground)
+        """
+        try:
+            geometry = []
+            gw_tag = 1000  # High tag number to avoid conflicts with antenna elements
+            
+            # Calculate pad dimensions
+            pad_width = trace_width * 2.0  # Square pad with 2x trace width
+            half_width = pad_width / 2.0
+            
+            # Signal pad at origin (0, 0) - connected to antenna
+            signal_center_x, signal_center_y = 0.0, 0.0
+            
+            # Ground pad offset by pad_spacing - connected to ground plane
+            ground_center_x, ground_center_y = pad_spacing, 0.0
+            
+            # Generate signal pad
+            # Top side
+            geometry.append(f"GW {gw_tag} 1 {signal_center_x - half_width:.4f} {signal_center_y + half_width:.4f} 0 "
+                           f"{signal_center_x + half_width:.4f} {signal_center_y + half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Right side
+            geometry.append(f"GW {gw_tag} 1 {signal_center_x + half_width:.4f} {signal_center_y + half_width:.4f} 0 "
+                           f"{signal_center_x + half_width:.4f} {signal_center_y - half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Bottom side
+            geometry.append(f"GW {gw_tag} 1 {signal_center_x + half_width:.4f} {signal_center_y - half_width:.4f} 0 "
+                           f"{signal_center_x - half_width:.4f} {signal_center_y - half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Left side
+            geometry.append(f"GW {gw_tag} 1 {signal_center_x - half_width:.4f} {signal_center_y - half_width:.4f} 0 "
+                           f"{signal_center_x - half_width:.4f} {signal_center_y + half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Generate ground pad
+            # Top side
+            geometry.append(f"GW {gw_tag} 1 {ground_center_x - half_width:.4f} {ground_center_y + half_width:.4f} 0 "
+                           f"{ground_center_x + half_width:.4f} {ground_center_y + half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Right side
+            geometry.append(f"GW {gw_tag} 1 {ground_center_x + half_width:.4f} {ground_center_y + half_width:.4f} 0 "
+                           f"{ground_center_x + half_width:.4f} {ground_center_y - half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Bottom side
+            geometry.append(f"GW {gw_tag} 1 {ground_center_x + half_width:.4f} {ground_center_y - half_width:.4f} 0 "
+                           f"{ground_center_x - half_width:.4f} {ground_center_y - half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            # Left side
+            geometry.append(f"GW {gw_tag} 1 {ground_center_x - half_width:.4f} {ground_center_y - half_width:.4f} 0 "
+                           f"{ground_center_x - half_width:.4f} {ground_center_y + half_width:.4f} 0 {trace_width:.4f}")
+            gw_tag += 1
+            
+            logger.info(f"Generated dual contact pads: signal at (0,0), ground at ({pad_spacing:.3f},0), "
+                       f"{pad_width*1000:.1f} mil square pads, {trace_width*1000:.1f} mil trace width")
+            
+            return "\n".join(geometry)
+            
+        except Exception as e:
+            logger.error(f"Dual contact pad generation failed: {str(e)}")
+            return ""
+
+    def generate_dipole_with_pads(self, frequency_mhz: float, length_ratio: float = 0.95, 
+                                 use_meandering: bool = True, add_contact_pads: bool = False) -> str:
+        """Generate dipole antenna geometry with optional contact pads.
+
+        Args:
+            frequency_mhz: Operating frequency in MHz
+            length_ratio: Ratio of actual length to theoretical quarter wavelength
+            use_meandering: Whether to use meandering to fit in limited space
+            add_contact_pads: Whether to add contact pads at feed points
+
+        Returns:
+            str: NEC2 geometry card format
+        """
+        try:
+            # Generate base dipole geometry
+            base_geometry = self.generate_dipole(frequency_mhz, length_ratio, use_meandering)
+            
+            if not add_contact_pads:
+                return base_geometry
+            
+            # Extract trace width from base geometry
+            trace_width = self._extract_trace_width_from_geometry(base_geometry)
+            if trace_width <= 0:
+                trace_width = self.min_feature_size * 2  # Fallback to default
+            
+            # Generate contact pads at feed points
+            contact_pads = self._generate_dipole_contact_pads(trace_width)
+            
+            # Combine base geometry with contact pads
+            combined_geometry = f"{base_geometry}\n{contact_pads}"
+            
+            logger.info(f"Generated dipole with contact pads for {frequency_mhz} MHz")
+            return combined_geometry
+            
+        except Exception as e:
+            logger.error(f"Dipole with pads generation error: {str(e)}")
+            raise AntennaGeometryError(f"Failed to generate dipole with pads: {str(e)}")
+
+    def _extract_trace_width_from_geometry(self, geometry: str) -> float:
+        """Extract trace width from existing geometry.
+
+        Args:
+            geometry: NEC2 geometry string
+
+        Returns:
+            float: Trace width in inches, or 0 if not found
+        """
+        try:
+            lines = geometry.split('\n')
+            for line in lines:
+                if line.strip():
+                    parts = line.split()
+                    if len(parts) >= 9 and parts[0] == 'GW':
+                        try:
+                            trace_width = float(parts[8])
+                            if trace_width > 0:
+                                return trace_width
+                        except (ValueError, IndexError):
+                            continue
+            return 0.0
+        except Exception as e:
+            logger.warning(f"Failed to extract trace width: {str(e)}")
+            return 0.0
+
+    def _generate_dipole_contact_pads(self, trace_width: float) -> str:
+        """Generate contact pads for dipole antenna at feed points.
+
+        Args:
+            trace_width: Width of the trace in inches
+
+        Returns:
+            str: NEC2 geometry cards for contact pads
+        """
+        try:
+            # For dipole, create pads at the center feed point
+            # Use origin (0, 0) as the feed point
+            pad_geometry = self.generate_contact_pad(0.0, 0.0, trace_width)
+            
+            logger.info(f"Generated dipole contact pads: {trace_width*1000:.1f} mil trace width")
+            return pad_geometry
+            
+        except Exception as e:
+            logger.error(f"Dipole contact pads generation failed: {str(e)}")
+            return ""
+
+    def generate_meandered_dipole_with_pads(self, total_length: float, frequency_mhz: float, 
+                                          add_contact_pads: bool = False) -> str:
+        """Generate meandered dipole with optional contact pads.
+
+        Args:
+            total_length: Target total length in inches
+            frequency_mhz: Operating frequency in MHz
+            add_contact_pads: Whether to add contact pads
+
+        Returns:
+            str: NEC2 geometry card format
+        """
+        try:
+            # Generate base meandered dipole
+            base_geometry = self._generate_meandered_dipole(total_length, frequency_mhz)
+            
+            if not add_contact_pads:
+                return base_geometry
+            
+            # Extract trace width from base geometry
+            trace_width = self._extract_trace_width_from_geometry(base_geometry)
+            if trace_width <= 0:
+                trace_width = self.min_feature_size * 2  # Fallback to default
+            
+            # Generate contact pads at feed points (center of meander)
+            contact_pads = self._generate_meander_contact_pads(trace_width)
+            
+            # Combine base geometry with contact pads
+            combined_geometry = f"{base_geometry}\n{contact_pads}"
+            
+            logger.info(f"Generated meandered dipole with contact pads for {frequency_mhz} MHz")
+            return combined_geometry
+            
+        except Exception as e:
+            logger.error(f"Meandered dipole with pads generation error: {str(e)}")
+            raise AntennaGeometryError(f"Failed to generate meandered dipole with pads: {str(e)}")
+
+    def _generate_meander_contact_pads(self, trace_width: float) -> str:
+        """Generate contact pads for meandered dipole at feed points.
+
+        Args:
+            trace_width: Width of the trace in inches
+
+        Returns:
+            str: NEC2 geometry cards for contact pads
+        """
+        try:
+            # For meandered dipole, create pads at the center feed point
+            # where both left and right halves meet
+            pad_geometry = self.generate_contact_pad(0.0, 0.0, trace_width)
+            
+            logger.info(f"Generated meander contact pads: {trace_width*1000:.1f} mil trace width")
+            return pad_geometry
+            
+        except Exception as e:
+            logger.error(f"Meander contact pads generation failed: {str(e)}")
+            return ""
+
+    def generate_monopole_with_pads(self, frequency_mhz: float, ground_length: float = 1.0,
+                                  add_contact_pads: bool = False) -> str:
+        """Generate monopole antenna with optional contact pads.
+
+        Args:
+            frequency_mhz: Operating frequency in MHz
+            ground_length: Length of ground plane elements
+            add_contact_pads: Whether to add contact pads
+
+        Returns:
+            str: NEC2 geometry card format
+        """
+        try:
+            # Generate base monopole geometry
+            base_geometry = self.generate_monopole(frequency_mhz, ground_length)
+            
+            if not add_contact_pads:
+                return base_geometry
+            
+            # Extract trace width from base geometry
+            trace_width = self._extract_trace_width_from_geometry(base_geometry)
+            if trace_width <= 0:
+                trace_width = self.min_feature_size  # Fallback to default
+            
+            # Generate contact pads at feed point (base of monopole)
+            contact_pads = self._generate_monopole_contact_pads(trace_width)
+            
+            # Combine base geometry with contact pads
+            combined_geometry = f"{base_geometry}\n{contact_pads}"
+            
+            logger.info(f"Generated monopole with contact pads for {frequency_mhz} MHz")
+            return combined_geometry
+            
+        except Exception as e:
+            logger.error(f"Monopole with pads generation error: {str(e)}")
+            raise AntennaGeometryError(f"Failed to generate monopole with pads: {str(e)}")
+
+    def _generate_monopole_contact_pads(self, trace_width: float) -> str:
+        """Generate contact pads for monopole antenna at feed point.
+
+        Args:
+            trace_width: Width of the trace in inches
+
+        Returns:
+            str: NEC2 geometry cards for contact pads
+        """
+        try:
+            # For monopole, create pads at the base feed point (origin)
+            pad_geometry = self.generate_contact_pad(0.0, 0.0, trace_width)
+            
+            logger.info(f"Generated monopole contact pads: {trace_width*1000:.1f} mil trace width")
+            return pad_geometry
+            
+        except Exception as e:
+            logger.error(f"Monopole contact pads generation failed: {str(e)}")
+            return ""
+
+    def generate_spiral_coil_with_pads(self, frequency_mhz: float, turns: int = 3,
+                                     min_radius: float = 0.05, spacing: float = 0.01,
+                                     add_contact_pads: bool = False) -> str:
+        """Generate spiral coil with optional contact pads.
+
+        Args:
+            frequency_mhz: Operating frequency in MHz
+            turns: Number of spiral turns
+            min_radius: Inner radius in inches
+            spacing: Spacing between turns in inches
+            add_contact_pads: Whether to add contact pads
+
+        Returns:
+            str: NEC2 geometry card format
+        """
+        try:
+            # Generate base spiral geometry
+            base_geometry = self.generate_spiral_coil(frequency_mhz, turns, min_radius, spacing)
+            
+            if not add_contact_pads:
+                return base_geometry
+            
+            # Extract trace width from base geometry
+            trace_width = self._extract_trace_width_from_geometry(base_geometry)
+            if trace_width <= 0:
+                trace_width = self.min_feature_size  # Fallback to default
+            
+            # Generate contact pads at spiral start/end points
+            contact_pads = self._generate_spiral_contact_pads(trace_width)
+            
+            # Combine base geometry with contact pads
+            combined_geometry = f"{base_geometry}\n{contact_pads}"
+            
+            logger.info(f"Generated spiral coil with contact pads for {frequency_mhz} MHz")
+            return combined_geometry
+            
+        except Exception as e:
+            logger.error(f"Spiral coil with pads generation error: {str(e)}")
+            raise AntennaGeometryError(f"Failed to generate spiral coil with pads: {str(e)}")
+
+    def _generate_spiral_contact_pads(self, trace_width: float) -> str:
+        """Generate contact pads for spiral coil at start and end points.
+
+        Args:
+            trace_width: Width of the trace in inches
+
+        Returns:
+            str: NEC2 geometry cards for contact pads
+        """
+        try:
+            # For spiral, create pads at both start (center) and end (outer edge)
+            # Start pad at origin
+            start_pad = self.generate_contact_pad(0.0, 0.0, trace_width)
+            
+            # End pad at outer edge (approximate position)
+            # For a spiral, the end is typically at radius = min_radius + (turns-1)*spacing
+            # We'll place the end pad at a reasonable outer position
+            end_pad = self.generate_contact_pad(0.1, 0.0, trace_width)  # 0.1" from center
+            
+            pad_geometry = f"{start_pad}\n{end_pad}"
+            
+            logger.info(f"Generated spiral contact pads: {trace_width*1000:.1f} mil trace width")
+            return pad_geometry
+            
+        except Exception as e:
+            logger.error(f"Spiral contact pads generation failed: {str(e)}")
+            return ""
+
+    def generate_tri_band_geometry_with_pads(self, freq1: float, freq2: float, freq3: float, 
+                                           add_contact_pads: bool = False) -> str:
+        """Generate tri-band antenna combining multiple elements with optional contact pads.
+
+        Args:
+            freq1, freq2, freq3: Three operating frequencies in MHz
+            add_contact_pads: Whether to add contact pads
+
+        Returns:
+            str: Combined NEC2 geometry for tri-band operation
+        """
+        try:
+            geometries = []
+
+            # Low frequency: Monopole with ground plane
+            if add_contact_pads:
+                geom1 = self.generate_monopole_with_pads(freq1, add_contact_pads=True)
+            else:
+                geom1 = self.generate_monopole(freq1)
+            geometries.append(geom1)
+
+            # Mid frequency: Dipole
+            if add_contact_pads:
+                geom2 = self.generate_dipole_with_pads(freq2, add_contact_pads=True)
+            else:
+                geom2 = self.generate_dipole(freq2)
+            geometries.append(geom2)
+
+            # High frequency: Patch or spiral
+            if freq3 > 1000:  # GHz range
+                if add_contact_pads:
+                    geom3 = self.generate_spiral_coil_with_pads(freq3, turns=2, add_contact_pads=True)
+                else:
+                    geom3 = self.generate_spiral_coil(freq3, turns=2)
+            else:
+                geom3 = self.generate_patch_antenna(freq3)
+            geometries.append(geom3)
+
+            # Combine all geometries (adjust wire tags to avoid conflicts)
+            combined = []
+            tag_offset = 0
+            for geom in geometries:
+                lines = geom.split('\n')
+                for line in lines:
+                    if line.strip():
+                        parts = line.split()
+                        if len(parts) > 1 and parts[0] in ['GW', 'SP']:
+                            # Adjust tag numbers
+                            try:
+                                original_tag = int(float(parts[1]))
+                                parts[1] = str(original_tag + tag_offset)
+                            except (ValueError, IndexError):
+                                pass  # Keep original if can't parse
+                            combined.append(' '.join(parts))
+
+                # Increment tag offset (rough estimate)
+                tag_offset += 10
+
+            nec_geometry = "\n".join(combined)
+            logger.info(f"Generated tri-band antenna with pads for {freq1}/{freq2}/{freq3} MHz")
+            return nec_geometry
+
+        except Exception as e:
+            logger.error(f"Tri-band geometry with pads generation error: {str(e)}")
+            raise AntennaGeometryError(f"Failed to generate tri-band antenna with pads: {str(e)}")
 
     def generate_monopole(self, frequency_mhz: float, ground_length: float = 1.0) -> str:
         """Generate quarter-wave monopole antenna with ground plane.
@@ -1305,19 +1772,20 @@ class AdvancedMeanderTrace:
             for line in lines:
                 if line.strip():
                     parts = line.split()
-                    if len(parts) >= 8 and parts[0] == 'GW':
-                        # Extract wire segment
+                    if len(parts) >= 9 and parts[0] == 'GW':
+                        # GW card: GW tag seg x1 y1 z1 x2 y2 z2 [radius]
                         try:
                             x1, y1 = float(parts[3]), float(parts[4])
                             x2, y2 = float(parts[6]), float(parts[7])
                             segment_length = math.sqrt((x2-x1)**2 + (y2-y1)**2) * 0.0254  # Convert to meters
                             total_length += segment_length
                             segment_count += 1
-                            
-                            # Extract trace width
-                            if len(parts) > 8:
-                                trace_width_inches = float(parts[8])
-                                params['trace_width_meters'] = trace_width_inches * 0.0254
+
+                            # Trace width is the wire radius, index 9 (not z2 at 8)
+                            if len(parts) >= 10:
+                                radius_inches = abs(float(parts[9]))
+                                if radius_inches > 0:
+                                    params['trace_width_meters'] = radius_inches * 0.0254
                         except (ValueError, IndexError):
                             continue
             
@@ -1381,15 +1849,16 @@ class AdvancedMeanderTrace:
                     'fractional_bandwidth': freq_range / center_freq if center_freq > 0 else 0
                 }
             
-            # Estimate spatial utilization
-            total_length = 0
+            # Estimate spatial utilization: total copper area / substrate area.
+            copper_area = 0.0
             for band_key, params in multi_band_result.get('parameters', {}).items():
                 if isinstance(params, dict):
                     length = params.get('total_length_meters', 0)
-                    total_length += length
-            
+                    width = params.get('trace_width_meters', 0.001)
+                    copper_area += length * width
+
             substrate_area = self.substrate_width * self.substrate_height * 0.0254 * 0.0254
-            summary['spatial_utilization'] = min(100, (total_length * 0.001) / substrate_area * 100)
+            summary['spatial_utilization'] = min(100, copper_area / substrate_area * 100) if substrate_area > 0 else 0
             
             # Calculate design quality score (0-100)
             score = 0

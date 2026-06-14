@@ -317,7 +317,7 @@ class VectorExporter:
             # Combine all paths
             paths_str = '\n    '.join(paths)
 
-            # Generate professional labels and annotations including trace validation
+            # Generate professional labels and annotations including trace validation and contact pads
             annotations = self._generate_svg_annotations(wire_segments, transform, total_width, total_height, metadata, trace_validation)
 
             # Generate SVG with professional layout
@@ -495,6 +495,42 @@ class VectorExporter:
                             annotations.append(f'<text x="{title_x}" y="{warning_y + 15 + i*15}" class="dimension-text" fill="orange">{warning}</text>')
             else:
                 annotations.append(f'<text x="{title_x}" y="{trace_y}" class="dimension-text">Trace validation unavailable</text>')
+
+            # Contact pad information
+            contact_pad_y = trace_y + 120
+            annotations.append(f'<text x="{title_x}" y="{contact_pad_y}" class="label-text">CONTACT PADS:</text>')
+
+            # Check for contact pads in geometry
+            if trace_validation and trace_validation.get('trace_widths_mils'):
+                # Determine typical trace width
+                from collections import Counter
+                width_counts = Counter(f"{w:.4f}" for w in trace_validation['trace_widths_mils'])
+                typical_width = float(width_counts.most_common(1)[0][0])
+
+                # Look for pads (segments with radius >= 2x typical width)
+                pad_threshold = typical_width * 1.8
+                pad_count = sum(1 for w in trace_validation['trace_widths_mils'] if w >= pad_threshold)
+
+                if pad_count > 0:
+                    # Calculate average pad size
+                    pad_widths = [w for w in trace_validation['trace_widths_mils'] if w >= pad_threshold]
+                    avg_pad_width = sum(pad_widths) / len(pad_widths)
+                    pad_ratio = avg_pad_width / typical_width
+
+                    annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 15}" class="dimension-text">Status: Present ({pad_count} pads)</text>')
+                    annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 30}" class="dimension-text">Pad Size: {avg_pad_width:.1f} mil ({pad_ratio:.1f}× trace width)</text>')
+                    annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 45}" class="dimension-text">Soldering: Ready for hand soldering</text>')
+
+                    # Pad size validation
+                    if pad_ratio >= 1.9:
+                        annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 60}" class="dimension-text" fill="green">✓ Pad size adequate for reliable soldering</text>')
+                    else:
+                        annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 60}" class="dimension-text" fill="orange">⚠ Pads may be too small for reliable soldering</text>')
+                else:
+                    annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 15}" class="dimension-text">Status: Not detected</text>')
+                    annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 30}" class="dimension-text">Tip: Enable "Add Contact Pads" in Design tab</text>')
+            else:
+                annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 15}" class="dimension-text">Status: Unknown</text>')
 
             # Overall dimensions
             dim_y = trace_y + 120
@@ -709,7 +745,10 @@ class EtchingValidator:
             'complexity_score': 0,
             'warnings': [],
             'etching_ready': True,
-            'element_count': 0  # Add missing key
+            'element_count': 0,  # Add missing key
+            'contact_pads_present': False,
+            'contact_pad_size_valid': True,
+            'contact_pad_trace_width_ratio': 1.0
         }
 
         try:
@@ -741,6 +780,12 @@ class EtchingValidator:
             validation['trace_width_consistent'] = len(set(f"{w:.3f}" for w in trace_widths)) <= 3
             validation['total_area'] = total_length * 0.005  # Rough estimate
             validation['complexity_score'] = min(wire_count // 10, 4)  # Cap at 4
+
+            # Check for contact pads
+            contact_pad_info = EtchingValidator._check_contact_pads(segments, trace_widths)
+            validation['contact_pads_present'] = contact_pad_info['has_contact_pads']
+            validation['contact_pad_size_valid'] = contact_pad_info['size_valid']
+            validation['contact_pad_trace_width_ratio'] = contact_pad_info['ratio']
 
             # Generate warnings
             if not validation['minimum_feature_size']:
@@ -775,11 +820,66 @@ class EtchingValidator:
             if connectivity['isolated_segments'] > 0:
                 validation['warnings'].append(f"Found {connectivity['isolated_segments']} isolated single-segment wires")
 
+            # Contact pad specific warnings
+            if validation['contact_pads_present']:
+                if not validation['contact_pad_size_valid']:
+                    validation['warnings'].append("Contact pads may be too small for reliable soldering")
+                    validation['etching_ready'] = False
+                else:
+                    validation['warnings'].append(f"Contact pads detected: {contact_pad_info['count']} pads, "
+                                                f"size ratio: {contact_pad_info['ratio']:.1f}x trace width")
+
         except Exception as e:
             validation['warnings'].append(f"Validation error: {str(e)}")
             validation['etching_ready'] = False
 
         return validation
+
+    @staticmethod
+    def _check_contact_pads(segments: List[tuple], trace_widths: List[float]) -> Dict:
+        """Check for contact pads and validate their size."""
+        try:
+            # Determine typical trace width (most common value)
+            if not trace_widths:
+                return {'has_contact_pads': False, 'count': 0, 'size_valid': True, 'ratio': 1.0}
+
+            # Find most common trace width (typical antenna traces)
+            from collections import Counter
+            width_counts = Counter(f"{w:.4f}" for w in trace_widths)
+            typical_width = float(width_counts.most_common(1)[0][0])
+
+            # Look for segments with larger radius (contact pads)
+            # Contact pads should have radius >= 2x typical trace width
+            pad_threshold = typical_width * 1.8  # Allow some tolerance
+            contact_pads = [s for s in segments if s[4] >= pad_threshold]
+
+            pad_count = len(contact_pads)
+            has_contact_pads = pad_count > 0
+
+            # Validate pad size
+            size_valid = True
+            ratio = 1.0
+
+            if has_contact_pads:
+                # Calculate average pad radius
+                pad_radii = [s[4] for s in contact_pads]
+                avg_pad_radius = sum(pad_radii) / len(pad_radii)
+                ratio = avg_pad_radius / typical_width
+
+                # Check if pads are large enough for soldering (minimum 2x trace width)
+                if ratio < 1.9:  # Allow slight tolerance
+                    size_valid = False
+
+            return {
+                'has_contact_pads': has_contact_pads,
+                'count': pad_count,
+                'size_valid': size_valid,
+                'ratio': ratio
+            }
+
+        except Exception as e:
+            logger.warning(f"Contact pad validation failed: {str(e)}")
+            return {'has_contact_pads': False, 'count': 0, 'size_valid': True, 'ratio': 1.0}
 
     @staticmethod
     def _calculate_dimensions(segments):

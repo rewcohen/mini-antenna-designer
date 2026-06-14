@@ -693,6 +693,33 @@ class AntennaDesignerGUI:
         # Configure grid weights for trace frame
         trace_frame.columnconfigure(1, weight=1)
 
+        # Contact pads control
+        contact_frame = ttk.LabelFrame(parent, text="Soldering Options")
+        contact_frame.pack(fill='x', padx=5, pady=5)
+
+        # Contact pads checkbox
+        self.contact_pads_var = BooleanVar(value=False)
+        contact_pad_checkbox = ttk.Checkbutton(
+            contact_frame,
+            text="Add Contact Pads for Soldering",
+            variable=self.contact_pads_var,
+            command=self._on_contact_pads_changed
+        )
+        contact_pad_checkbox.grid(row=0, column=0, padx=5, pady=2, sticky='w')
+
+        # Contact pad info label
+        self.contact_pad_info_var = StringVar(value="Contact pads: 2× trace width (disabled)")
+        contact_pad_info = ttk.Label(
+            contact_frame,
+            textvariable=self.contact_pad_info_var,
+            font=('Arial', 9, 'italic'),
+            foreground='#666666'
+        )
+        contact_pad_info.grid(row=0, column=1, padx=10, pady=2, sticky='w')
+
+        # Configure grid weights
+        contact_frame.columnconfigure(1, weight=1)
+
         # Advanced Settings (collapsible)
         self.advanced_settings_frame = ttk.LabelFrame(parent, text="⊕ Advanced Settings (Click to Expand)")
         self.advanced_settings_frame.pack(fill='x', padx=5, pady=5)
@@ -1194,10 +1221,13 @@ Notes:
             # Update generator with current substrate dimensions if needed
             self.generator = AntennaDesignGenerator(self.nec, substrate_width, substrate_height)
 
+            # Get contact pads setting
+            add_contact_pads = self.contact_pads_var.get()
+
             # Generate design in background thread
             self.processing_thread = threading.Thread(
                 target=self._run_design_generation,
-                args=(selected_band, trace_width_inches)
+                args=(selected_band, trace_width_inches, add_contact_pads)
             )
             self.processing_thread.daemon = True
             self.processing_thread.start()
@@ -1205,11 +1235,11 @@ Notes:
         except Exception as e:
             self._show_error(f"Error starting design generation: {str(e)}")
 
-    def _run_design_generation(self, frequency_band, trace_width_inches):
+    def _run_design_generation(self, frequency_band, trace_width_inches, add_contact_pads):
         """Run design generation in background thread."""
         try:
             # Generate the design
-            results = self.generator.generate_design(frequency_band, trace_width_inches)
+            results = self.generator.generate_design(frequency_band, trace_width_inches, add_contact_pads)
 
             # Update UI on completion
             self.root.after(0, self._design_generation_complete, results)
@@ -3094,7 +3124,7 @@ Click OK to continue with an empty design library.
             self._show_error(f"Error generating analysis: {str(e)}")
 
     def _create_ascii_charts(self, freq1, freq2, freq3, vswr1, vswr2, vswr3, total_length, segment_count):
-        """Create ASCII charts for band analysis."""
+        """Create ASCII charts for band analysis with corrected mathematical calculations."""
         # Header
         output = "╔═══════════════════════════════════════════════════════════════════════════╗\n"
         output += "║                    BAND ANALYSIS - ASCII VISUALIZATION                     ║\n"
@@ -3114,29 +3144,35 @@ Click OK to continue with an empty design library.
             output += self._vswr_bar(vswr3) + " │\n"
         output += "└─────────────────────────────────────────────────────────────────────────┘\n\n"
 
-        # VSWR bar chart
+        # VSWR bar chart with corrected scaling
         output += "VSWR Performance (Target: < 2.0 = Excellent, < 3.0 = Good)\n"
         output += "────────────────────────────────────────────────────────────────────────────\n"
-        max_vswr = max(vswr1, vswr2 if freq2 > 0 else 0, vswr3 if freq3 > 0 else 0)
-        scale = 50 / max(max_vswr, 3.0)  # Scale to 50 chars max
 
-        output += f"Band 1 ({freq1:.1f}MHz): "
-        output += "█" * int(vswr1 * scale)
-        output += f" {vswr1:.2f}\n"
+        # Get valid VSWR values (exclude 0 or invalid values)
+        valid_vswrs = []
+        if vswr1 > 0:
+            valid_vswrs.append(('Band 1', freq1, vswr1))
+        if freq2 > 0 and vswr2 > 0:
+            valid_vswrs.append(('Band 2', freq2, vswr2))
+        if freq3 > 0 and vswr3 > 0:
+            valid_vswrs.append(('Band 3', freq3, vswr3))
 
-        if freq2 > 0:
-            output += f"Band 2 ({freq2:.1f}MHz): "
-            output += "█" * int(vswr2 * scale)
-            output += f" {vswr2:.2f}\n"
+        if valid_vswrs:
+            # Use maximum VSWR for scaling, but cap at 5.0 for reasonable display
+            max_vswr = max(v[2] for v in valid_vswrs)
+            max_display_vswr = min(max_vswr, 5.0)  # Cap at 5.0 for better scaling
 
-        if freq3 > 0:
-            output += f"Band 3 ({freq3:.1f}MHz): "
-            output += "█" * int(vswr3 * scale)
-            output += f" {vswr3:.2f}\n"
+            # Scale to 50 chars max, with 5.0 as the reference point
+            scale = 50 / max_display_vswr
+
+            for band_name, freq, vswr in valid_vswrs:
+                bar_length = int(vswr * scale)
+                bar = "█" * min(bar_length, 50)  # Cap at 50 chars
+                output += f"{band_name} ({freq:.1f}MHz): {bar:<50} {vswr:.2f}\n"
 
         output += "────────────────────────────────────────────────────────────────────────────\n"
-        output += "Reference: | 1.0   | 1.5   | 2.0   | 2.5   | 3.0   |\n"
-        output += "           └───────┴───────┴───────┴───────┴───────┘\n\n"
+        output += "Reference: | 1.0   | 1.5   | 2.0   | 2.5   | 3.0   | 4.0   | 5.0   |\n"
+        output += "           └───────┴───────┴───────┴───────┴───────┴───────┴───────┘\n\n"
 
         # Trace length information
         output += "┌─────────────────────────────────────────────────────────────────────────┐\n"
@@ -3149,10 +3185,11 @@ Click OK to continue with an empty design library.
             output += f"│ Average Segment:       {avg_length:8.2f} mm  ({avg_length/25.4:6.3f} in)       │\n"
         output += "└─────────────────────────────────────────────────────────────────────────┘\n\n"
 
-        # Wavelength comparison
+        # Wavelength comparison with corrected units
         if freq1 > 0:
+            # Calculate wavelength in meters, then convert to mm
             wavelength1 = 299.792458 / freq1  # meters
-            wavelength1_mm = wavelength1 * 1000
+            wavelength1_mm = wavelength1 * 1000  # convert to mm  # convert to mm
             ratio1 = total_length / wavelength1_mm
 
             output += "┌─────────────────────────────────────────────────────────────────────────┐\n"
@@ -3164,8 +3201,8 @@ Click OK to continue with an empty design library.
             output += f"│   Resonance:            {self._get_resonance_type(ratio1):25s}            │\n"
 
             if freq2 > 0:
-                wavelength2 = 299.792458 / freq2
-                wavelength2_mm = wavelength2 * 1000
+                wavelength2 = 299.792458 / freq2  # meters
+                wavelength2_mm = wavelength2 * 1000  # convert to mm
                 ratio2 = total_length / wavelength2_mm
                 output += f"│ Band 2 ({freq2:.1f} MHz):                                                  │\n"
                 output += f"│   Wavelength (λ):       {wavelength2_mm:8.2f} mm                          │\n"
@@ -3173,8 +3210,8 @@ Click OK to continue with an empty design library.
                 output += f"│   Resonance:            {self._get_resonance_type(ratio2):25s}            │\n"
 
             if freq3 > 0:
-                wavelength3 = 299.792458 / freq3
-                wavelength3_mm = wavelength3 * 1000
+                wavelength3 = 299.792458 / freq3  # meters
+                wavelength3_mm = wavelength3 * 1000  # convert to mm
                 ratio3 = total_length / wavelength3_mm
                 output += f"│ Band 3 ({freq3:.1f} MHz):                                                  │\n"
                 output += f"│   Wavelength (λ):       {wavelength3_mm:8.2f} mm                          │\n"
@@ -3183,23 +3220,39 @@ Click OK to continue with an empty design library.
 
             output += "└─────────────────────────────────────────────────────────────────────────┘\n\n"
 
-        # Performance summary
+        # Performance summary with corrected thresholds
         output += "PERFORMANCE SUMMARY\n"
         output += "────────────────────────────────────────────────────────────────────────────\n"
+
+        # Count bands with valid VSWR values
         excellent = sum(1 for v in [vswr1, vswr2, vswr3] if 0 < v < 2.0)
         good = sum(1 for v in [vswr1, vswr2, vswr3] if 2.0 <= v < 3.0)
-        poor = sum(1 for v in [vswr1, vswr2, vswr3] if v >= 3.0)
+        poor = sum(1 for v in [vswr1, vswr2, vswr3] if v >= 3.0 or v <= 0)
+
+        # Only count bands that actually have valid data
+        valid_bands = sum(1 for v in [vswr1, vswr2, vswr3] if v > 0)
+        total_bands = max(valid_bands, 1)  # Avoid division by zero
 
         output += f"  Excellent (VSWR < 2.0): {excellent} band(s)\n"
         output += f"  Good (2.0 ≤ VSWR < 3.0): {good} band(s)\n"
-        output += f"  Poor (VSWR ≥ 3.0):       {poor} band(s)\n\n"
+        output += f"  Poor (VSWR ≥ 3.0):       {poor} band(s)\n"
+        output += f"  Total Valid Bands:       {total_bands}\n\n"
 
-        if excellent >= 2:
-            output += "  ✓ Overall Rating: EXCELLENT - Design meets performance targets\n"
-        elif excellent + good >= 2:
-            output += "  ✓ Overall Rating: GOOD - Design is functional with acceptable VSWR\n"
+        # Performance rating based on percentage of bands meeting targets
+        if valid_bands > 0:
+            excellent_percentage = (excellent / total_bands) * 100
+            good_percentage = (good / total_bands) * 100
+
+            if excellent_percentage >= 66.7:  # 2/3 or more bands excellent
+                output += "  ✓ Overall Rating: EXCELLENT - Design meets performance targets\n"
+            elif excellent_percentage >= 33.3:  # 1/3 or more bands excellent
+                output += "  ✓ Overall Rating: GOOD - Design is functional with acceptable VSWR\n"
+            elif good_percentage >= 66.7:  # 2/3 or more bands good
+                output += "  ✓ Overall Rating: ACCEPTABLE - Design functional but needs optimization\n"
+            else:
+                output += "  ⚠ Overall Rating: NEEDS IMPROVEMENT - Consider redesign or optimization\n"
         else:
-            output += "  ⚠ Overall Rating: NEEDS IMPROVEMENT - Consider redesign or optimization\n"
+            output += "  ⚠ Overall Rating: NO VALID DATA - Generate design to see performance metrics\n"
 
         return output
 
@@ -3531,6 +3584,18 @@ Click OK to continue with an empty design library.
         ttk.Label(save_prompt, text="Tip: You can always save designs manually from the toolbar above",
                  font=('Segoe UI', 8), foreground='#666666').pack(pady=(0, 10))
 
+
+    def _on_contact_pads_changed(self):
+        """Handle contact pads checkbox changes."""
+        try:
+            if self.contact_pads_var.get():
+                trace_width = self.trace_width_var.get()
+                pad_size = trace_width * 2
+                self.contact_pad_info_var.set(f"Contact pads: 2× trace width ({pad_size:.0f} mil)")
+            else:
+                self.contact_pad_info_var.set("Contact pads: 2× trace width (disabled)")
+        except Exception as e:
+            logger.error(f"Error updating contact pad info: {str(e)}")
 
 def test_storage():
     """Test design storage system without launching GUI."""

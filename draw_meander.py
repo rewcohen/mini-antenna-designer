@@ -6,8 +6,16 @@ This module draws meander patterns from NEC2 geometry to help visualize
 and debug antenna trace layouts.
 """
 
+import sys
 from typing import List, Tuple
 import math
+
+# Force UTF-8 so emoji in console output don't crash on Windows (cp1252).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8")  # type: ignore[attr-defined]
+    except (AttributeError, ValueError):
+        pass
 
 
 def parse_nec2_geometry(geometry_text: str) -> List[Tuple[float, float, float, float]]:
