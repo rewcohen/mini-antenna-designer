@@ -73,8 +73,13 @@ class PropertiesPanel:
             if vswr is None:
                 continue
             f = key.replace("freq_", "").replace("_mhz", "")
-            chip = ttk.Label(self.chips, text=f"{f} MHz  VSWR {vswr:.2f}",
-                             bootstyle=f"{_vswr_level(vswr)} inverse")
+            try:
+                vnum = float(vswr)
+                vtext, level = f"{vnum:.2f}", _vswr_level(vnum)
+            except (TypeError, ValueError):
+                vtext, level = str(vswr), SECONDARY  # tuned designs may give "~2.5"
+            chip = ttk.Label(self.chips, text=f"{f} MHz  VSWR {vtext}",
+                             bootstyle=f"{level} inverse")
             chip.pack(anchor="w", pady=1)
 
         summ = metrics.get("summary", {})

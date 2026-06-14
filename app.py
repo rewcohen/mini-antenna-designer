@@ -71,7 +71,8 @@ class AntennaDesignerApp:
         bar = ttk.Frame(self.root, padding=(PAD_M, PAD_S))
         bar.pack(side=TOP, fill=X)
         actions = {"New": self._new, "Open Library": self._open_library,
-                   "Save": self._save_design, "Wizard": self._stub, "Tune": self._stub}
+                   "Save": self._save_design, "Wizard": self._open_wizard,
+                   "Tune": self._open_tune}
         for text, cmd in actions.items():
             ttk.Button(bar, text=text, bootstyle=SECONDARY, command=cmd).pack(
                 side=LEFT, padx=(0, PAD_S))
@@ -165,13 +166,27 @@ class AntennaDesignerApp:
             self.status_var.set("Generation failed")
             messagebox.showerror("Generation failed", str(error) if error else "Unknown error")
             return
-        self.session.results = result
-        self.session.geometry = result.get("geometry")
-        meta = {"band_name": result.get("band_name"),
-                "frequencies": self.session.frequencies_mhz()}
-        self.session.svg = geometry_to_svg(self.exporter, self.session.geometry, meta)
-        self.status_var.set(f"Generated: {result.get('design_type', 'design')}")
+        self._apply_design(result, status=f"Generated: {result.get('design_type', 'design')}")
+
+    def _apply_design(self, design: dict, status: str = "Design loaded"):
+        """Adopt a design dict (from generate/wizard/tune) into the session + canvas."""
+        self.session.results = design
+        self.session.geometry = design.get("geometry")
+        self.session.svg = geometry_to_svg(
+            self.exporter, self.session.geometry, self._svg_metadata(design))
+        self.status_var.set(status)
         self.session.notify(EVT_GENERATED)
+
+    def _svg_metadata(self, design: dict) -> dict:
+        """Metadata so the SVG/export marks feed pads, labels and the pattern overlay."""
+        return {
+            "band_name": design.get("band_name"),
+            "frequencies": self.session.frequencies_mhz(),
+            "design_type": design.get("design_type"),
+            "connection_points": design.get("connection_points", []),
+            "feed_advice": design.get("feed_advice", []),
+            "radiation_pattern": design.get("radiation_pattern"),
+        }
 
     def _stop(self):
         # Generation is short (~1-3s); nothing to cancel mid-flight yet.
@@ -186,7 +201,7 @@ class AntennaDesignerApp:
         try:
             path = self.exporter.export_geometry(
                 self.session.geometry, name, fmt,
-                {"band_name": self.session.band.name if self.session.band else ""})
+                self._svg_metadata(self.session.results or {}))
             self.status_var.set(f"Exported {fmt.upper()} → {path}")
             messagebox.showinfo("Exported", f"Saved {fmt.upper()}:\n{path}")
         except ExportError as e:
@@ -238,8 +253,15 @@ class AntennaDesignerApp:
         self.status_var.set(f"Loaded '{getattr(metadata, 'name', 'design')}' from library")
         self.session.notify(EVT_GENERATED)
 
-    def _stub(self):
-        messagebox.showinfo("Coming soon", "This tool is not wired up yet.")
+    def _open_wizard(self):
+        from gui.dialogs import WizardDialog
+        WizardDialog(self.root, self.session,
+                     lambda d: self._apply_design(d, "Loaded from wizard"))
+
+    def _open_tune(self):
+        from gui.dialogs import TuneDialog
+        TuneDialog(self.root, self.session,
+                   lambda d: self._apply_design(d, "Applied tuned design"))
 
     def _on_session(self, event: str):
         if event == EVT_INPUTS:
