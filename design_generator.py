@@ -6,6 +6,7 @@ from loguru import logger
 
 from core import NEC2Interface, compute_feed_requirements
 from design import AntennaDesign, AdvancedMeanderTrace
+from wire_antennas import assess_meander_feasibility
 from presets import FrequencyBand, BandAnalysis
 
 class AntennaDesignGenerator:
@@ -58,6 +59,11 @@ class AntennaDesignGenerator:
                  'x_mm': round(r['feed_x_in'] * 25.4, 2), 'y_mm': round(r['feed_y_in'] * 25.4, 2)}
                 for r in resonators
             ]
+            # Is the meander actually a usable radiator for each band? If not (band
+            # too low for this board), recommend hand-built copper-wire designs.
+            feasibility = assess_meander_feasibility(
+                resonators, self.advanced_meander.substrate_width,
+                self.advanced_meander.substrate_height)
 
             design_result = {
                 'geometry': geometry,
@@ -70,6 +76,7 @@ class AntennaDesignGenerator:
                 'metrics': metrics,
                 'connection_points': connection_points,
                 'feed_advice': feed_advice,
+                'feasibility': feasibility,
                 'success': validation['within_bounds'] or not any(
                     issue.startswith('X extent') or issue.startswith('Y extent')
                     for issue in validation.get('bound_violations', [])

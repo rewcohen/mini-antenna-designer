@@ -26,6 +26,7 @@ from design_generator import AntennaDesignGenerator
 from export import VectorExporter, ExportError
 from presets import BandPresets, BandType, FrequencyBand
 from storage import DesignStorage, DesignMetadata
+from wizard import AntennaWizard
 
 class AntennaDesignerGUI:
     """Main GUI application for antenna design."""
@@ -198,6 +199,8 @@ class AntennaDesignerGUI:
 
         # Tools menu
         tools_menu = Menu(menubar, tearoff=0)
+        tools_menu.add_command(label="Antenna Selection Wizard", command=self._open_antenna_wizard)
+        tools_menu.add_separator()
         tools_menu.add_command(label="Validate Geometry", command=self._validate_geometry)
         tools_menu.add_command(label="Analyze Performance", command=self._analyze_performance)
         tools_menu.add_command(label="View Logs", command=self._show_logs)
@@ -1368,6 +1371,29 @@ Feed / Balun / Impedance Advice:
                                      f"     Match: {a.get('matching_advice','')}\n"
                                      f"     Balun: {a.get('balun_advice','')}\n")
 
+            # Feasibility: when a band's meander can't radiate on this board,
+            # recommend hand-built copper-wire antennas with dimensions.
+            feasibility = results.get('feasibility', [])
+            infeasible = [b for b in feasibility if not b.get('feasible', True)]
+            if infeasible:
+                display_text += f"""
+
+{'='*50}
+NOT BUILDABLE AS A MEANDER - USE A COPPER-WIRE ANTENNA
+{'='*50}
+"""
+                for band in infeasible:
+                    display_text += (f"\n{band.get('label','ANT')} @ {band.get('freq_mhz',0):.0f} MHz: "
+                                     f"{band.get('reason','')}\n"
+                                     f"Recommended hand-built designs:\n")
+                    for alt in band.get('alternatives', []):
+                        display_text += f"\n  * {alt['name']}\n"
+                        for k, v in alt.get('dimensions', {}).items():
+                            display_text += f"      {k}: {v}\n"
+                        display_text += (f"      Feed: {alt.get('feed_impedance','')}  |  "
+                                         f"Balun: {alt.get('balun','')}\n"
+                                         f"      {alt.get('notes','')}\n")
+
             display_text += f"""
 
 Warnings:
@@ -1590,6 +1616,120 @@ Warnings:
 
         except Exception as e:
             logger.error(f"Error showing geometry preview: {str(e)}")
+
+    def _open_antenna_wizard(self):
+        """Guided wizard: pick a service + TX/RX, see possible designs, get a spec."""
+        try:
+            wiz = AntennaWizard(
+                substrate_width_in=float(self.substrate_width_var.get()),
+                substrate_height_in=float(self.substrate_height_var.get()),
+            )
+        except Exception:
+            wiz = AntennaWizard()
+
+        win = Toplevel(self.root)
+        win.title("Antenna Selection Wizard")
+        win.geometry("760x620")
+
+        services = wiz.list_services()
+        modes = wiz.list_modes()
+        svc_labels = [s['name'] for s in services]
+        mode_labels = [m['label'] for m in modes]
+
+        top = ttk.Frame(win, padding=10)
+        top.pack(fill='x')
+        ttk.Label(top, text="1. What service is this antenna for?").grid(row=0, column=0, sticky='w')
+        svc_var = StringVar(value=svc_labels[0])
+        svc_cb = ttk.Combobox(top, textvariable=svc_var, values=svc_labels, state='readonly', width=40)
+        svc_cb.grid(row=0, column=1, sticky='w', padx=6, pady=3)
+
+        ttk.Label(top, text="2. Transmit, receive, or both?").grid(row=1, column=0, sticky='w')
+        mode_var = StringVar(value=mode_labels[-1])
+        mode_cb = ttk.Combobox(top, textvariable=mode_var, values=mode_labels, state='readonly', width=40)
+        mode_cb.grid(row=1, column=1, sticky='w', padx=6, pady=3)
+
+        info = ttk.Label(top, text="", foreground="#555", wraplength=720, justify='left')
+        info.grid(row=2, column=0, columnspan=2, sticky='w', pady=(4, 0))
+
+        mid = ttk.Frame(win, padding=(10, 0))
+        mid.pack(fill='both', expand=True)
+        ttk.Label(mid, text="3. Possible designs (select one):").pack(anchor='w')
+        options_list = Listbox(mid, height=7)
+        options_list.pack(fill='x', pady=3)
+
+        spec_text = ScrolledText(mid, height=16, wrap=WORD)
+        spec_text.pack(fill='both', expand=True, pady=3)
+
+        state = {'ctx': None}
+
+        def svc_key():
+            return services[svc_labels.index(svc_var.get())]['key']
+
+        def mode_key():
+            return modes[mode_labels.index(mode_var.get())]['key']
+
+        def find_designs(*_):
+            try:
+                ctx = wiz.get_design_options(svc_key(), mode_key())
+                state['ctx'] = ctx
+                info.config(text=f"{ctx['service']['notes']}  |  "
+                                 f"{ctx['frequencies_mhz'][0]:.1f} MHz, wavelength {ctx['wavelength_in']} in")
+                options_list.delete(0, END)
+                for o in ctx['options']:
+                    mark = "[OK]" if o['feasible'] else "[NO]"
+                    options_list.insert(END, f"{mark} {o['name']}  -  {o['summary']}")
+                # Default-select the first feasible option.
+                for i, o in enumerate(ctx['options']):
+                    if o['feasible']:
+                        options_list.selection_set(i)
+                        break
+            except Exception as e:
+                messagebox.showerror("Wizard", f"Could not load designs: {e}")
+
+        def build_spec():
+            ctx = state.get('ctx')
+            if not ctx:
+                find_designs()
+                ctx = state.get('ctx')
+            sel = options_list.curselection()
+            if not sel:
+                messagebox.showinfo("Wizard", "Select a design option first.")
+                return
+            idx = sel[0]
+            try:
+                spec = wiz.build_spec(svc_key(), mode_key(), idx)
+                spec_text.delete(1.0, END)
+                spec_text.insert(END, spec['spec_text'])
+                state['spec'] = spec
+            except Exception as e:
+                messagebox.showerror("Wizard", f"Could not build spec: {e}")
+
+        def use_in_designer():
+            spec = state.get('spec')
+            if not spec or spec.get('kind') != 'meander':
+                messagebox.showinfo("Wizard", "Build a meander spec first to load it into the designer.")
+                return
+            design = spec.get('design', {})
+            self.current_geometry = design.get('geometry', '')
+            self.current_results = design
+            try:
+                self._design_generation_complete(design)
+            except Exception:
+                self._display_design_results(design)
+            messagebox.showinfo("Wizard", "Loaded into the designer. You can now export the SVG.")
+            win.destroy()
+
+        svc_cb.bind('<<ComboboxSelected>>', find_designs)
+        mode_cb.bind('<<ComboboxSelected>>', find_designs)
+
+        btns = ttk.Frame(win, padding=10)
+        btns.pack(fill='x')
+        ttk.Button(btns, text="Find Designs", command=find_designs).pack(side=LEFT, padx=3)
+        ttk.Button(btns, text="Build Spec", command=build_spec).pack(side=LEFT, padx=3)
+        ttk.Button(btns, text="Use Meander in Designer", command=use_in_designer).pack(side=LEFT, padx=3)
+        ttk.Button(btns, text="Close", command=win.destroy).pack(side=RIGHT, padx=3)
+
+        find_designs()
 
     def _export_geometry(self, format_type):
         """Export current geometry to specified format."""
