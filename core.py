@@ -172,8 +172,15 @@ class AntennaAnalyzer:
         }
 
     @staticmethod
-    def estimate(geom: Dict[str, float], frequency_mhz: float) -> dict:
-        """Estimate performance metrics for one frequency from parsed geometry."""
+    def estimate(geom: Dict[str, float], frequency_mhz: float,
+                 velocity_factor: float = 1.0) -> dict:
+        """Estimate performance metrics for one frequency from parsed geometry.
+
+        ``velocity_factor`` (<=1) accounts for wave slowing on a dielectric
+        substrate: the resonant wire length is ``velocity_factor * lambda/2``.
+        A trace deliberately cut to that length then reads as on-resonance
+        (near-zero reactance) instead of spuriously short.
+        """
         f_hz = frequency_mhz * 1e6
         lam = _C / f_hz
         total_len = geom['total_len_m']
@@ -201,8 +208,9 @@ class AntennaAnalyzer:
         r_loss = max(r_loss, 1e-3)
 
         # --- Reactance from resonance detuning of the total wire length.
-        # Resonance occurs near integer multiples of a half wavelength.
-        half_wave = lam / 2.0
+        # Resonance occurs near integer multiples of a half wavelength, scaled by
+        # the substrate velocity factor.
+        half_wave = (lam / 2.0) * max(0.1, velocity_factor)
         n_res = max(1, round(total_len / half_wave))
         detune = (total_len - n_res * half_wave) / half_wave   # fractional
         reactance = max(-600.0, min(600.0, 1200.0 * detune))
@@ -229,6 +237,76 @@ class AntennaAnalyzer:
             'frequency_mhz': frequency_mhz,
             'method': 'analytical',
         }
+
+
+def compute_feed_requirements(resonators: List[Dict]) -> List[Dict]:
+    """Advise on feed impedance, matching and balun for each resonator.
+
+    Each resonator here is a single end-fed meander trace, i.e. an *unbalanced*
+    element. The estimated feed impedance comes from the analytical model. The
+    advice is honest about what that topology needs:
+
+    - Unbalanced element + coax: no balun is needed for *balance*, but a
+      common-mode choke is good practice to keep RF off the coax shield.
+    - If the feed resistance is far from 50 Ohm, an impedance match (unun
+      transformer or L-network) is recommended; the nearest standard ratio is
+      suggested.
+
+    Args:
+        resonators: list of dicts with 'label', 'freq_mhz', 'geometry'
+            (and optionally feed coordinates), as produced by
+            AdvancedMeanderTrace.generate_separate_band_resonators.
+
+    Returns:
+        list of advice dicts (one per resonator).
+    """
+    standard_ununs = [('1:1', 50), ('4:1', 200), ('9:1', 450), ('16:1', 800), ('49:1', 2450)]
+    advice = []
+    for r in resonators or []:
+        freq = r.get('freq_mhz', 0) or 0
+        geom = AntennaAnalyzer.parse_geometry(r.get('geometry', ''))
+        # Resonators are cut to kc=0.90 * half-wave (see extract_target_length),
+        # so evaluate with the matching velocity factor: a tuned element then
+        # reads near-resonant instead of spuriously reactive.
+        est = AntennaAnalyzer.estimate(geom, freq, velocity_factor=0.90) if freq > 0 else {}
+        Z = est.get('impedance_ohms', complex(0, 0))
+        R = Z.real if isinstance(Z, complex) else 0.0
+        X = Z.imag if isinstance(Z, complex) else 0.0
+
+        # Single end-fed meander trace -> unbalanced feed.
+        balanced = False
+        need_match = R < 25.0 or R > 100.0 or abs(X) > 25.0
+        ratio_needed = max(R, 1.0) / 50.0
+        best_unun = min(standard_ununs, key=lambda s: abs(s[1] / 50.0 - ratio_needed))
+
+        if balanced:
+            balun = "1:1 current balun required (balanced element fed by unbalanced coax)."
+        else:
+            balun = ("No balun required for balance (unbalanced end-fed element). "
+                     "Fit a common-mode choke at the feed to keep RF off the coax shield.")
+
+        if need_match:
+            matching = (f"Match to 50 Ohm (feed R~={R:.0f} Ohm, X~={X:+.0f} Ohm): "
+                        f"nearest standard transformer {best_unun[0]} (~{best_unun[1]} Ohm) "
+                        f"or an L-network.")
+            transformer = best_unun[0]
+        else:
+            matching = "Direct 50 Ohm coax feed is acceptable."
+            transformer = "1:1 / none"
+
+        advice.append({
+            'label': r.get('label'),
+            'freq_mhz': freq,
+            'feed_impedance_ohms': complex(round(R, 1), round(X, 1)),
+            'feed_impedance_str': f"{R:.0f}{'+' if X >= 0 else '-'}j{abs(X):.0f} Ohm",
+            'balun_required': balanced,
+            'balun_advice': balun,
+            'matching_advice': matching,
+            'recommended_transformer': transformer,
+            'feed_x_in': r.get('feed_x_in'),
+            'feed_y_in': r.get('feed_y_in'),
+        })
+    return advice
 
 
 class NEC2Interface:

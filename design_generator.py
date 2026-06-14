@@ -4,7 +4,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from loguru import logger
 
-from core import NEC2Interface
+from core import NEC2Interface, compute_feed_requirements
 from design import AntennaDesign, AdvancedMeanderTrace
 from presets import FrequencyBand, BandAnalysis
 
@@ -49,6 +49,16 @@ class AntennaDesignGenerator:
             # Generate metrics (with NEC2 analysis)
             metrics = self._analyze_design(geometry, [f1, f2, f3])
 
+            # Per-resonator connection points and feed/balun/impedance advice.
+            resonators = getattr(self.advanced_meander, 'last_resonators', []) or []
+            feed_advice = compute_feed_requirements(resonators)
+            connection_points = [
+                {'label': r['label'], 'freq_mhz': r['freq_mhz'],
+                 'x_in': r['feed_x_in'], 'y_in': r['feed_y_in'],
+                 'x_mm': round(r['feed_x_in'] * 25.4, 2), 'y_mm': round(r['feed_y_in'] * 25.4, 2)}
+                for r in resonators
+            ]
+
             design_result = {
                 'geometry': geometry,
                 'design_type': design_type,
@@ -58,6 +68,8 @@ class AntennaDesignGenerator:
                 'band_name': frequency_band.name,
                 'validation': validation,
                 'metrics': metrics,
+                'connection_points': connection_points,
+                'feed_advice': feed_advice,
                 'success': validation['within_bounds'] or not any(
                     issue.startswith('X extent') or issue.startswith('Y extent')
                     for issue in validation.get('bound_violations', [])

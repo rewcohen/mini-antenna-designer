@@ -334,6 +334,7 @@ class VectorExporter:
       .subtitle-text {{ font-family: Arial, sans-serif; font-size: 12px; fill: #666; }}
       .dimension-line {{ stroke: #666; stroke-width: 1; fill: none; }}
       .feed-point {{ fill: red; stroke: darkred; stroke-width: 2; }}
+      .solder-pad {{ fill: black; stroke: black; stroke-width: 1; }}
     </style>
   </defs>
   
@@ -352,11 +353,10 @@ class VectorExporter:
   
   <!-- Professional annotations -->
   {annotations}
-  
-  <!-- Origin marker (feed point) -->
-  <circle cx="{transform(0, 0)[0]:.1f}" cy="{transform(0, 0)[1]:.1f}" r="8" class="feed-point"/>
-  <text x="{transform(0, 0)[0] + 15:.1f}" y="{transform(0, 0)[1]:.1f}" class="label-text">FEED POINT</text>
-  
+
+  <!-- Connection / feed points -->
+  {self._generate_feed_markers(transform, metadata)}
+
 </svg>'''
 
             return svg
@@ -364,6 +364,41 @@ class VectorExporter:
         except Exception as e:
             logger.error(f"SVG content generation error: {str(e)}")
             return self._get_empty_svg()
+
+    def _generate_feed_markers(self, transform_func, metadata: Optional[Dict]) -> str:
+        """Draw a labelled copper solder pad at each resonator's feed point.
+
+        Connection points come from ``metadata['connection_points']`` (each with
+        x_in/y_in feed coordinates and a label). Pads are filled copper (kept when
+        weeding); labels are annotation text pointing at them. Falls back to a single
+        origin feed marker when no connection points are supplied.
+        """
+        connection_points = (metadata or {}).get('connection_points') if metadata else None
+        pad_in = 0.06            # ~1.5 mm solder pad
+        pad_px = max(pad_in * self.svg_scale, 6.0)
+        markers = []
+
+        if connection_points:
+            for cp in connection_points:
+                try:
+                    cx, cy = transform_func(cp['x_in'], cp['y_in'])
+                except (KeyError, TypeError):
+                    continue
+                label = cp.get('label', 'ANT')
+                freq = cp.get('freq_mhz')
+                txt = f"{label}" + (f" ({freq:.0f} MHz)" if isinstance(freq, (int, float)) else "")
+                markers.append(
+                    f'<rect x="{cx - pad_px / 2:.1f}" y="{cy - pad_px / 2:.1f}" '
+                    f'width="{pad_px:.1f}" height="{pad_px:.1f}" class="solder-pad"/>')
+                markers.append(
+                    f'<text x="{cx + pad_px:.1f}" y="{cy - pad_px:.1f}" '
+                    f'class="label-text">{txt}</text>')
+        else:
+            ox, oy = transform_func(0, 0)
+            markers.append(f'<circle cx="{ox:.1f}" cy="{oy:.1f}" r="8" class="feed-point"/>')
+            markers.append(f'<text x="{ox + 15:.1f}" y="{oy:.1f}" class="label-text">FEED POINT</text>')
+
+        return '\n  '.join(markers)
 
     def _validate_trace_widths(self, wire_segments: List[tuple]) -> Dict[str, Any]:
         """Validate trace widths for manufacturability.

@@ -2087,14 +2087,17 @@ class AdvancedMeanderTrace:
 
     def generate_separate_band_resonators(self, frequencies: List[float],
                                           constraints: Dict[str, Any] = None) -> str:
-        """Generate one independent meandered resonator per band.
+        """Generate one independent meandered resonator per band, packed efficiently.
 
-        This is how real multiband planar antennas are built: each frequency gets
-        its own element sized to that band's half-wave, rather than one shared trace.
-        The substrate height is split into horizontal stripes (one per band, widest
-        band on top), and each stripe is filled with a serpentine sized to its own
-        resonant length. Elements are separated by a small gap to limit inter-band
-        coupling.
+        This is how real multiband planar antennas are built: each frequency gets its
+        own element sized to that band's half-wave. Each resonator is laid out as a
+        compact, roughly square serpentine block; the blocks are then shelf-packed
+        across the substrate (largest first) so widely different band sizes don't waste
+        area. Every resonator records a labelled feed point (the start of its trace)
+        for soldering. Inter-block gaps limit coupling.
+
+        The feed-point / label / per-resonator metadata is stored on
+        ``self.last_resonators`` for the caller (export, connection map, feed advice).
 
         Args:
             frequencies: Target frequencies in MHz.
@@ -2103,9 +2106,11 @@ class AdvancedMeanderTrace:
         Returns:
             str: Combined NEC2 GW geometry (one resonator per band, inches).
         """
+        self.last_resonators = []
         try:
             constraints = constraints or {}
-            valid = sorted([f for f in frequencies if f > 0])  # low->high (longest->shortest)
+            # Largest (lowest freq) first so packing places big blocks first.
+            valid = sorted([f for f in frequencies if f > 0])
             if not valid:
                 logger.warning("No valid frequencies for resonator generation")
                 return ""
@@ -2113,33 +2118,103 @@ class AdvancedMeanderTrace:
             trace_width = constraints.get('trace_width', 0.008)
             bend_radius = constraints.get('bend_radius', 0.0008)
             margin = 0.05
+            usable_w = self.substrate_width - 2 * margin
+            usable_h = self.substrate_height - 2 * margin
+            min_pitch = max(trace_width * 3.0, 2 * bend_radius + trace_width)
 
-            max_x = self.substrate_width / 2 - margin
-            usable_height = self.substrate_height - 2 * margin
+            # 1. Allocate board area to each resonator. A meander radiates from its
+            #    physical EXTENT, not its folded wire length, so cramming an element
+            #    into a tiny block destroys its radiation resistance. Instead give
+            #    each resonator the full board width and a share of the height
+            #    proportional to its target length (lower bands, which are harder to
+            #    fit and radiate, get more area). This keeps extent - and therefore
+            #    efficiency - as high as the board allows while wasting no space.
             n = len(valid)
-            stripe_h = usable_height / n
-            gap = min(trace_width * 4, stripe_h * 0.2)   # guard band between resonators
-            stripe_half = max((stripe_h - gap) / 2, trace_width * 1.5)
-            top_usable = self.substrate_height / 2 - margin
+            gap = max(trace_width * 4, 0.04)
+            height_budget = max(min_pitch * n, usable_h - gap * (n - 1))
+            targets = [self.extract_target_length(f) for f in valid]
+            total_target = sum(targets) or 1.0
 
+            blocks = []
+            for freq, target in zip(valid, targets):
+                h = max(min_pitch, height_budget * (target / total_target))
+                blocks.append({'freq': freq, 'target': target, 'w': usable_w, 'h': h})
+
+            # 2. Shelf-pack the blocks. Full-width blocks each take their own shelf,
+            #    so they stack vertically (largest band on top) with feed points
+            #    aligned on the left edge for easy routing.
+            placements = self._shelf_pack(blocks, usable_w, usable_h, gap)
+
+            # 3. Generate each resonator inside its packed block and record its feed.
             geometry = []
             tag = 1
-            for i, freq in enumerate(valid):
-                target = self.extract_target_length(freq)        # half-wave (inches)
-                center_y = top_usable - stripe_h * (i + 0.5)
+            for i, (blk, pos) in enumerate(zip(blocks, placements)):
+                # Packer coords have origin top-left; convert to centred substrate coords.
+                cx = -usable_w / 2 + pos['x'] + blk['w'] / 2
+                cy = usable_h / 2 - pos['y'] - blk['h'] / 2
                 segs, achieved = self._generate_serpentine_fill(
-                    target_length=target, max_x=max_x, max_y=stripe_half,
+                    target_length=blk['target'], max_x=blk['w'] / 2, max_y=blk['h'] / 2,
                     trace_width=trace_width, bend_radius=bend_radius,
-                    start_tag=tag, x_center=0.0, y_center=center_y
+                    start_tag=tag, x_center=cx, y_center=cy
                 )
-                if segs:
-                    geometry.extend(segs)
-                    tag += len(segs)
-                    logger.info(f"Resonator {i+1}/{n}: {freq:.0f}MHz target={target:.2f}\" "
-                               f"achieved={achieved:.2f}\" at y={center_y:.2f}\"")
+                if not segs:
+                    continue
+                geometry.extend(segs)
+                tag += len(segs)
+
+                first = segs[0].split()
+                feed_x, feed_y = float(first[3]), float(first[4])
+                label = f"ANT{i + 1}"
+                self.last_resonators.append({
+                    'label': label,
+                    'freq_mhz': blk['freq'],
+                    'feed_x_in': feed_x,
+                    'feed_y_in': feed_y,
+                    'target_in': blk['target'],
+                    'achieved_in': achieved,
+                    'trace_width_in': trace_width,
+                    'geometry': "\n".join(segs),
+                })
+                logger.info(f"Resonator {label}: {blk['freq']:.0f}MHz target={blk['target']:.2f}\" "
+                           f"achieved={achieved:.2f}\" feed=({feed_x:.2f},{feed_y:.2f})\" "
+                           f"block={blk['w']:.2f}x{blk['h']:.2f}\"")
+
+            if getattr(self, '_pack_overflow', False):
+                logger.warning("Resonator packing overflowed the substrate - design too dense")
 
             return "\n".join(geometry)
 
         except Exception as e:
             logger.error(f"Separate band resonator generation failed: {str(e)}")
+            import traceback
+            logger.error(traceback.format_exc())
             return ""
+
+    def _shelf_pack(self, blocks: List[Dict[str, Any]], usable_w: float, usable_h: float,
+                    gap: float) -> List[Dict[str, float]]:
+        """First-fit-decreasing-height shelf packing.
+
+        Returns a top-left (x, y) placement for each block (same order as input),
+        with origin at the top-left of the usable area. Sets ``self._pack_overflow``
+        if a block could not fit within the usable height.
+        """
+        order = sorted(range(len(blocks)), key=lambda i: blocks[i]['h'], reverse=True)
+        placements = [None] * len(blocks)
+        cursor_x = 0.0
+        shelf_y = 0.0
+        shelf_h = 0.0
+        self._pack_overflow = False
+
+        for idx in order:
+            w, h = blocks[idx]['w'], blocks[idx]['h']
+            if cursor_x + w > usable_w + 1e-9:        # wrap to a new shelf
+                shelf_y += shelf_h + gap
+                cursor_x = 0.0
+                shelf_h = 0.0
+            if shelf_y + h > usable_h + 1e-9:
+                self._pack_overflow = True            # doesn't fit; place anyway
+            placements[idx] = {'x': cursor_x, 'y': shelf_y}
+            cursor_x += w + gap
+            shelf_h = max(shelf_h, h)
+
+        return placements

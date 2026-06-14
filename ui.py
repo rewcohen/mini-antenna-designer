@@ -1343,6 +1343,31 @@ Bandwidth: {summary.get('bandwidth_octaves', 'N/A')} octaves
   Impedance: {freq_data.get('impedance', 'N/A')}
 """
 
+            # Connection points + feed/balun/impedance advice (per resonator).
+            connection_points = results.get('connection_points', [])
+            feed_advice = results.get('feed_advice', [])
+            if connection_points:
+                display_text += f"""
+
+Connection Points (solder feed pads):
+{'-'*50}
+"""
+                for cp in connection_points:
+                    display_text += (f"  {cp.get('label','ANT')} @ {cp.get('freq_mhz',0):.0f} MHz: "
+                                     f"({cp.get('x_in',0):.2f}, {cp.get('y_in',0):.2f}) in  /  "
+                                     f"({cp.get('x_mm',0):.1f}, {cp.get('y_mm',0):.1f}) mm\n")
+
+            if feed_advice:
+                display_text += f"""
+Feed / Balun / Impedance Advice:
+{'-'*50}
+"""
+                for a in feed_advice:
+                    display_text += (f"  {a.get('label','ANT')} @ {a.get('freq_mhz',0):.0f} MHz: "
+                                     f"feed Z ~= {a.get('feed_impedance_str','?')}\n"
+                                     f"     Match: {a.get('matching_advice','')}\n"
+                                     f"     Balun: {a.get('balun_advice','')}\n")
+
             display_text += f"""
 
 Warnings:
@@ -1625,7 +1650,10 @@ Warnings:
                 'frequencies': str(self.current_results.get('frequencies', [])) if self.current_results else 'Unknown',
                 'fitness_score': ".3f" if self.current_results else 'N/A',
                 'substrate_width': float(self.substrate_width_var.get()),
-                'substrate_height': float(self.substrate_height_var.get())
+                'substrate_height': float(self.substrate_height_var.get()),
+                # Per-resonator feed pads + advice so the SVG marks/labels them.
+                'connection_points': self.current_results.get('connection_points', []) if self.current_results else [],
+                'feed_advice': self.current_results.get('feed_advice', []) if self.current_results else [],
             }
 
             output_path = self.exporter.export_geometry(
