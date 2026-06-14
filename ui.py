@@ -200,6 +200,7 @@ class AntennaDesignerGUI:
         # Tools menu
         tools_menu = Menu(menubar, tearoff=0)
         tools_menu.add_command(label="Antenna Selection Wizard", command=self._open_antenna_wizard)
+        tools_menu.add_command(label="Tune Design", command=self._open_tuning_panel)
         tools_menu.add_separator()
         tools_menu.add_command(label="Validate Geometry", command=self._validate_geometry)
         tools_menu.add_command(label="Analyze Performance", command=self._analyze_performance)
@@ -1743,6 +1744,107 @@ Warnings:
         ttk.Button(btns, text="Close", command=win.destroy).pack(side=RIGHT, padx=3)
 
         find_designs()
+
+    def _open_tuning_panel(self):
+        """Tune the design: adjust levers (incl. gain target) and see expected results."""
+        from tune import evaluate_design
+
+        # Prefill from the current design / substrate fields where possible.
+        res = self.current_results or {}
+        f_default = ",".join(str(res.get(k)) for k in ('freq1_mhz', 'freq2_mhz', 'freq3_mhz')
+                             if res.get(k)) or "2442"
+        try:
+            sw_default = float(self.substrate_width_var.get())
+            sh_default = float(self.substrate_height_var.get())
+        except Exception:
+            sw_default, sh_default = 4.0, 2.0
+
+        win = Toplevel(self.root)
+        win.title("Tune Antenna Design")
+        win.geometry("720x640")
+
+        form = ttk.Frame(win, padding=10)
+        form.pack(fill='x')
+        rows = [
+            ("Frequencies (MHz, comma-sep)", StringVar(value=f_default)),
+            ("Substrate width (in)", StringVar(value=f"{sw_default:g}")),
+            ("Substrate height (in)", StringVar(value=f"{sh_default:g}")),
+            ("Trace width (mil)", StringVar(value="8")),
+            ("Target gain (dBi, blank=none)", StringVar(value="")),
+        ]
+        vars_ = {}
+        for i, (lbl, var) in enumerate(rows):
+            ttk.Label(form, text=lbl).grid(row=i, column=0, sticky='w', pady=2)
+            ttk.Entry(form, textvariable=var, width=28).grid(row=i, column=1, sticky='w', padx=6)
+            vars_[lbl] = var
+        ttk.Label(form, text="Mode").grid(row=len(rows), column=0, sticky='w', pady=2)
+        mode_var = StringVar(value=res.get('_mode', 'both'))
+        ttk.Combobox(form, textvariable=mode_var, values=['tx', 'rx', 'both'],
+                     state='readonly', width=26).grid(row=len(rows), column=1, sticky='w', padx=6)
+
+        out = ScrolledText(win, height=24, wrap=WORD)
+        out.pack(fill='both', expand=True, padx=10, pady=6)
+        state = {}
+
+        def recalc():
+            try:
+                freqs = [float(x) for x in vars_["Frequencies (MHz, comma-sep)"].get().split(',') if x.strip()]
+                sw = float(vars_["Substrate width (in)"].get())
+                sh = float(vars_["Substrate height (in)"].get())
+                tw = float(vars_["Trace width (mil)"].get())
+                tg_raw = vars_["Target gain (dBi, blank=none)"].get().strip()
+                tg = float(tg_raw) if tg_raw else None
+            except ValueError:
+                messagebox.showerror("Tune", "Check numeric fields.")
+                return
+            r = evaluate_design(freqs, sw, sh, tw, mode_var.get(), target_gain_dbi=tg)
+            state['result'] = r
+            lines = [
+                f"EXPECTED RESULTS  ({sw:g}x{sh:g} in, {tw:g} mil, {mode_var.get()})",
+                "=" * 56,
+                f"Best gain: {r['best_gain_dbi']} dBi   |   Lowest efficiency: {r['worst_efficiency_pct']}%",
+                f"Pattern: {r['pattern']['type']} (max {r['pattern']['max_gain_dbi']} dBi "
+                f"@ {r['pattern']['max_gain_dir_deg']} deg)",
+                "",
+                "Per band:",
+            ]
+            for b in r['bands']:
+                ok = "OK" if b['feasible'] else "NOT VIABLE"
+                lines.append(f"  {b['label']} {b['freq_mhz']:.0f} MHz [{ok}]: "
+                             f"gain {b['gain_dbi']:.1f} dBi, eff {b['efficiency_pct']:.0f}%, "
+                             f"Z {b['impedance']}")
+            if r['warnings']:
+                lines += ["", "WARNINGS:"]
+                lines += [f"  ! {w}" for w in r['warnings']]
+            if r['tips']:
+                lines += ["", "TIPS:"]
+                lines += [f"  - {t}" for t in r['tips']]
+            out.delete(1.0, END)
+            out.insert(END, "\n".join(lines))
+
+        def apply_to_design():
+            r = state.get('result')
+            if not r:
+                recalc()
+                r = state.get('result')
+            if not r:
+                return
+            self.current_geometry = r['geometry']
+            self.current_results = r['design']
+            self.substrate_width_var.set(str(r['substrate_in'][0]))
+            self.substrate_height_var.set(str(r['substrate_in'][1]))
+            try:
+                self._design_generation_complete(r['design'])
+            except Exception:
+                self._display_design_results(r['design'])
+            messagebox.showinfo("Tune", "Applied. Save it via File > Save Design to Library.")
+
+        btns = ttk.Frame(win, padding=10)
+        btns.pack(fill='x')
+        ttk.Button(btns, text="Recalculate", command=recalc).pack(side=LEFT, padx=3)
+        ttk.Button(btns, text="Apply to Current Design", command=apply_to_design).pack(side=LEFT, padx=3)
+        ttk.Button(btns, text="Close", command=win.destroy).pack(side=RIGHT, padx=3)
+        recalc()
 
     def _export_geometry(self, format_type):
         """Export current geometry to specified format."""
