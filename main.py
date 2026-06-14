@@ -1,14 +1,22 @@
 """Main entry point for Mini Antenna Designer application."""
+import os
 import sys
 import traceback
 from loguru import logger
 
+def _use_new_gui() -> bool:
+    """New wizard GUI when ``--new`` is passed or ANTENNA_GUI=new; else legacy ui."""
+    return "--new" in sys.argv or os.environ.get("ANTENNA_GUI", "").lower() == "new"
+
 def main():
     """Application entry point with comprehensive error handling."""
     try:
-        # Import and run GUI
-        from ui import main as gui_main
-        logger.info("Starting Mini Antenna Designer application")
+        if _use_new_gui():
+            from app import main as gui_main
+            logger.info("Starting Mini Antenna Designer (wizard GUI)")
+        else:
+            from ui import main as gui_main
+            logger.info("Starting Mini Antenna Designer application")
         gui_main()
 
     except ImportError as e:

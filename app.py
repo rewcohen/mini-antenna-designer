@@ -275,6 +275,10 @@ class AntennaDesignerApp:
     def _toggle_theme(self):
         self.dark_mode = not self.dark_mode
         self.style.theme_use(self.DARK_THEME if self.dark_mode else self.LIGHT_THEME)
+        try:
+            self.canvas_view.apply_theme(self.style.colors.inputbg)
+        except Exception:
+            logger.exception("canvas theme refresh failed")
 
 
 def main():

@@ -57,6 +57,11 @@ class CanvasView:
         session.subscribe(self._on_event)
         self._show_placeholder()
 
+    def apply_theme(self, background: str):
+        """Re-skin the tk Canvas (ttkbootstrap leaves plain tk widgets alone)."""
+        self.canvas.configure(background=background)
+        self._render()
+
     # --- session ---
     def _on_event(self, event: str):
         if event == EVT_GENERATED:
