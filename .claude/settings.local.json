@@ -4,7 +4,17 @@
       "Bash(cat:*)",
       "Bash(python test_export_meander.py:*)",
       "Bash(python debug_geometry.py:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(echo \"started pid $!\")",
+      "PowerShell(Stop-Process -Id 6932 -ErrorAction SilentlyContinue)",
+      "PowerShell(\"killed old instance\")",
+      "Bash(git checkout *)",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(gh pr create --base main --head ui-redesign-ttkbootstrap --title 'Redesign UI with ttkbootstrap \\(+ geometry-preview crash fix\\)' --body ' *)",
+      "Bash(git -C \"c:\\\\Users\\\\hdcor\\\\mini-antenna-designer\" show --stat HEAD)",
+      "Bash(git -C \"c:\\\\Users\\\\hdcor\\\\mini-antenna-designer\" show HEAD~1:gui/library_view.py)"
     ],
     "deny": [],
     "ask": []

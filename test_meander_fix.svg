@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="220.5" height="136.0" viewBox="0 0 220.5 136.0"
+     xmlns="http://www.w3.org/2000/svg">
+  <title>Meander Pattern Debug</title>
+
+  <!-- Background -->
+  <rect width="220.5" height="136.0" fill="white" stroke="black" stroke-width="1"/>
+
+  <!-- Antenna traces -->
+  <g>
+    <line x1="20.00" y1="68.00" x2="200.50" y2="68.00" stroke="black" stroke-width="2"/>
+    <line x1="200.50" y1="68.00" x2="200.50" y2="56.00" stroke="black" stroke-width="2"/>
+    <line x1="200.50" y1="56.00" x2="20.00" y2="56.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="56.00" x2="20.00" y2="44.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="44.00" x2="200.50" y2="44.00" stroke="black" stroke-width="2"/>
+    <line x1="200.50" y1="44.00" x2="200.50" y2="32.00" stroke="black" stroke-width="2"/>
+    <line x1="200.50" y1="32.00" x2="20.00" y2="32.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="32.00" x2="20.00" y2="20.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="20.00" x2="200.50" y2="20.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="68.00" x2="200.50" y2="68.00" stroke="black" stroke-width="2"/>
+    <line x1="200.50" y1="68.00" x2="200.50" y2="80.00" stroke="black" stroke-width="2"/>
+    <line x1="200.50" y1="80.00" x2="20.00" y2="80.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="80.00" x2="20.00" y2="92.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="92.00" x2="200.50" y2="92.00" stroke="black" stroke-width="2"/>
+    <line x1="200.50" y1="92.00" x2="200.50" y2="104.00" stroke="black" stroke-width="2"/>
+    <line x1="200.50" y1="104.00" x2="20.00" y2="104.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="104.00" x2="20.00" y2="116.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="116.00" x2="200.50" y2="116.00" stroke="black" stroke-width="2"/>
+    <line x1="20.00" y1="68.00" x2="20.00" y2="68.00" stroke="black" stroke-width="2"/>
+  </g>
+
+  <!-- Info text -->
+  <text x="10" y="20" font-family="Arial" font-size="8" fill="black">
+    Bounds: 1.805" x 0.960"
+  </text>
+  <text x="10" y="35" font-family="Arial" font-size="8" fill="black">
+    Segments: 19
+  </text>
+  <text x="10" y="50" font-family="Arial" font-size="8" fill="black">
+    Total length: 19.010"
+  </text>
+
+</svg>
