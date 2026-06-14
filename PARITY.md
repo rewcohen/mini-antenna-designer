@@ -6,6 +6,11 @@ Status legend: ✅ ported (equivalent) · 🟡 partial (present but reduced/rede
 
 > Verdict: **do not flip `main.py`'s default to `app.py` yet** — the new GUI is not at feature parity. Many 🟡 are deliberate redesigns (step rail vs tabs, card gallery vs dropdown) and not regressions; the ❌ list is the real backlog. See the curated priority section the assistant maintains separately.
 
+> **UPDATE (post-audit):** P1, P2, and P3 regressions have since been ported, the
+> velocity-factor physics fix landed, and `main.py` now **defaults to the wizard GUI**
+> (legacy via `--legacy`). The audit below reflects the pre-port state; treat the
+> "Genuine regressions" list as closed unless re-audited.
+
 ## Curated read (assistant)
 
 Not all 🟡/❌ are regressions. Splitting the backlog:

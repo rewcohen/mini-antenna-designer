@@ -72,7 +72,13 @@ python app.py                  # new GUI directly
 ~~3. Contact-pad live info text~~ — DONE (trace step, tracks toggle + width slider).
 ~~4. Raw NEC geometry text view~~ — DONE (analysis dialog "NEC Geometry" tab + Copy).
 ~~5. Target-length preview estimate~~ — DONE (generate step shows per-band est. length + total + tight-fit hint).
-6. Remaining: feature-parity checklist vs `ui.py`, flip `main.py` default to `app`, retire `ui.py`.
+~~6. feature-parity checklist + flip default + retire ui.py~~ — DONE:
+   - Parity audited in `PARITY.md` (200 features); P1+P2+P3 regressions ported.
+   - `main.py` now defaults to the wizard GUI; legacy is opt-in via
+     `python main.py --legacy` (or `ANTENNA_GUI=legacy`). `ui.py` kept one
+     cycle as the fallback — delete on confirmation.
+   - Substrate material now affects resonant length (velocity factor added to
+     `design.calculate_target_length`).
 
 ## Design-critique polish (commit 705d95e)
 A `/impeccable critique` pass (pass 2, with live screenshots; snapshot in
