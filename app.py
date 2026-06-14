@@ -16,7 +16,7 @@ from loguru import logger
 
 ttk.LabelFrame = ttk.Labelframe  # ttkbootstrap leaks the tk spelling
 
-PAD_S, PAD_M, PAD_L = 4, 8, 12
+from gui.constants import PAD_S, PAD_M, PAD_L
 
 from core import NEC2Interface
 from design_generator import AntennaDesignGenerator
@@ -27,7 +27,6 @@ from gui.session import DesignSession, EVT_STEP, EVT_GENERATED, EVT_INPUTS
 from gui.canvas_view import CanvasView
 from gui.step_rail import StepRail
 from gui.properties_panel import PropertiesPanel
-from gui.svg_render import geometry_to_svg
 from gui.steps.band_step import BandStep
 from gui.steps.board_step import BoardStep
 from gui.steps.trace_step import TraceStep
@@ -64,7 +63,20 @@ class AntennaDesignerApp:
         self._build_workspace()
 
         self.session.subscribe(self._on_session)
+        self._bind_keys()
         logger.info("Wizard GUI initialized")
+
+    def _bind_keys(self):
+        """Keyboard shortcuts for the common workflow actions."""
+        r = self.root
+        r.bind("<Control-g>", lambda e: self._generate())
+        r.bind("<Control-Return>", lambda e: self._generate())
+        r.bind("<Control-s>", lambda e: self._save_design())
+        r.bind("<Control-o>", lambda e: self._open_library())
+        r.bind("<Control-n>", lambda e: self._new())
+        r.bind("<Control-e>", lambda e: self._export("svg"))
+        for i in range(5):
+            r.bind(f"<Control-Key-{i+1}>", lambda e, i=i: self.rail._select(i))
 
     # --- toolbar ---
     def _build_toolbar(self):
@@ -74,7 +86,7 @@ class AntennaDesignerApp:
                    "Save": self._save_design, "Wizard": self._open_wizard,
                    "Tune": self._open_tune}
         for text, cmd in actions.items():
-            ttk.Button(bar, text=text, bootstyle=SECONDARY, command=cmd).pack(
+            ttk.Button(bar, text=text, bootstyle="secondary-outline", command=cmd).pack(
                 side=LEFT, padx=(0, PAD_S))
         ttk.Button(bar, text="Generate", bootstyle=PRIMARY, command=self._generate).pack(
             side=RIGHT)
@@ -109,7 +121,7 @@ class AntennaDesignerApp:
         self.rail = StepRail(rail_host, self.session, self._show_step)
         self.rail.frame.pack(fill=BOTH, expand=True)
 
-        self.canvas_view = CanvasView(canvas_host, self.session)
+        self.canvas_view = CanvasView(canvas_host, self.session, self.exporter)
         self.canvas_view.frame.pack(fill=BOTH, expand=True)
 
         self.props = PropertiesPanel(props_host, self.session)
@@ -164,7 +176,9 @@ class AntennaDesignerApp:
         self.steps[3].set_busy(False)
         if error is not None or not result:
             self.status_var.set("Generation failed")
-            messagebox.showerror("Generation failed", str(error) if error else "Unknown error")
+            messagebox.showerror(
+                "Generation failed",
+                "Could not generate this design. See the log for details.")
             return
         self._apply_design(result, status=f"Generated: {result.get('design_type', 'design')}")
 
@@ -172,8 +186,7 @@ class AntennaDesignerApp:
         """Adopt a design dict (from generate/wizard/tune) into the session + canvas."""
         self.session.results = design
         self.session.geometry = design.get("geometry")
-        self.session.svg = geometry_to_svg(
-            self.exporter, self.session.geometry, self._svg_metadata(design))
+        self.session.svg_metadata = self._svg_metadata(design)  # canvas builds the SVG
         self.status_var.set(status)
         self.session.notify(EVT_GENERATED)
 
@@ -204,8 +217,10 @@ class AntennaDesignerApp:
                 self._svg_metadata(self.session.results or {}))
             self.status_var.set(f"Exported {fmt.upper()} → {path}")
             messagebox.showinfo("Exported", f"Saved {fmt.upper()}:\n{path}")
-        except ExportError as e:
-            messagebox.showerror("Export failed", str(e))
+        except ExportError:
+            logger.exception("export failed")
+            messagebox.showerror(
+                "Export failed", "Could not export this design. See the log for details.")
 
     def _save_design(self):
         if not self.session.has_design:
@@ -225,15 +240,19 @@ class AntennaDesignerApp:
             self.storage.save_design(self.session.geometry, meta, self.session.results)
             self.status_var.set("Design saved to library")
             messagebox.showinfo("Saved", "Design saved to your library.")
-        except Exception as e:
+        except Exception:
             logger.exception("save failed")
-            messagebox.showerror("Save failed", str(e))
+            messagebox.showerror(
+                "Save failed", "Could not save this design. See the log for details.")
 
     # --- toolbar stubs (filled in later phases) ---
     def _new(self):
+        if self.session.has_design and not messagebox.askyesno(
+                "New design", "Discard the current design and start over?"):
+            return
         self.session.results = None
         self.session.geometry = None
-        self.session.svg = None
+        self.session.svg_metadata = None
         self.status_var.set("New design")
         self.session.notify(EVT_GENERATED)
 
@@ -249,7 +268,7 @@ class AntennaDesignerApp:
                                 "validation": {}, "success": True}
         meta = {"band_name": getattr(metadata, "band_name", ""),
                 "frequencies": getattr(metadata, "frequencies_mhz", None)}
-        self.session.svg = geometry_to_svg(self.exporter, geometry, meta)
+        self.session.svg_metadata = meta  # canvas builds the SVG
         self.status_var.set(f"Loaded '{getattr(metadata, 'name', 'design')}' from library")
         self.session.notify(EVT_GENERATED)
 

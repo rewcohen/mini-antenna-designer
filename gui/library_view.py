@@ -11,7 +11,7 @@ import ttkbootstrap as ttk
 from ttkbootstrap.constants import PRIMARY, SECONDARY, DANGER
 from loguru import logger
 
-PAD_S, PAD_M = 4, 8
+from gui.constants import PAD_S, PAD_M
 
 
 class LibraryDialog:
@@ -59,6 +59,8 @@ class LibraryDialog:
         ttk.Button(btns, text="Close", bootstyle=SECONDARY,
                    command=self.win.destroy).pack(side=RIGHT)
 
+        self.win.bind("<Escape>", lambda e: self.win.destroy())
+        self.win.focus_set()
         self._refresh()
 
     def _refresh(self):

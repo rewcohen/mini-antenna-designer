@@ -35,29 +35,45 @@ def geometry_to_svg(exporter, geometry: str, metadata: Optional[Dict] = None) ->
 
 
 def render_svg_to_photoimage(svg_string: str, zoom: float = 1.0,
-                             max_size: Tuple[int, int] = (1600, 1100)):
-    """Rasterize ``svg_string`` to an ``ImageTk.PhotoImage`` at ``zoom``.
+                             fit_size: Optional[Tuple[int, int]] = None,
+                             max_size: Tuple[int, int] = (2600, 1800)):
+    """Rasterize ``svg_string`` to an ``ImageTk.PhotoImage``, fitting or zooming.
 
-    Renders at 2x base resolution for crisp zoom, then scales to ``zoom`` and
-    clamps to ``max_size``. Returns ``None`` if unavailable/failed.
+    Renders the base raster at high DPI for crisp upscaling. When ``fit_size`` is
+    given, derives a zoom that fits the design into that viewport; otherwise uses
+    the passed ``zoom``. Result is clamped to ``max_size`` (aspect preserved).
+
+    Returns a 3-tuple ``(photo_or_None, applied_zoom, size_or_None)`` where size
+    is ``(width_px, height_px)`` of the produced image. On failure / no PIL it
+    returns ``(None, zoom, None)``.
     """
     if not PIL_AVAILABLE:
-        return None
+        return (None, zoom, None)
     try:
         svg_bytes = svg_string.encode("utf-8")
         drawing = svg2rlg(BytesIO(svg_bytes))
         if drawing is None:
-            return None
+            return (None, zoom, None)
 
-        base_scale = 2.0
+        base_scale = 3.0  # 216 / 72
         png_buffer = BytesIO()
-        renderPM.drawToFile(drawing, png_buffer, fmt="PNG", dpi=144)
+        renderPM.drawToFile(drawing, png_buffer, fmt="PNG", dpi=216)
         png_buffer.seek(0)
         img = Image.open(png_buffer)
 
         w, h = img.size
-        zw = max(1, int(w * zoom / base_scale))
-        zh = max(1, int(h * zoom / base_scale))
+        nat_w = w / base_scale
+        nat_h = h / base_scale
+
+        # Fit-to-viewport derives the zoom; otherwise honour the passed zoom.
+        if fit_size is not None and nat_w > 0 and nat_h > 0:
+            fw, fh = fit_size
+            if fw > 2 and fh > 2:
+                zoom = min(fw / nat_w, fh / nat_h)
+                zoom = max(0.05, min(16.0, zoom))
+
+        zw = max(1, int(nat_w * zoom))
+        zh = max(1, int(nat_h * zoom))
 
         max_w, max_h = max_size
         if zw > max_w:
@@ -66,10 +82,10 @@ def render_svg_to_photoimage(svg_string: str, zoom: float = 1.0,
         if zh > max_h:
             zw = int(zw * max_h / zh)
             zh = max_h
-        zw, zh = max(zw, 60), max(zh, 40)
+        zw, zh = max(zw, 40), max(zh, 30)
 
         img = img.resize((zw, zh), Image.Resampling.LANCZOS)
-        return ImageTk.PhotoImage(img)
+        return (ImageTk.PhotoImage(img), zoom, (zw, zh))
     except Exception:
         logger.exception("render_svg_to_photoimage failed")
-        return None
+        return (None, zoom, None)

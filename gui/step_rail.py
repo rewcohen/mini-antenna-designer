@@ -4,11 +4,11 @@ from __future__ import annotations
 from typing import Callable, List, Tuple
 from tkinter import X, TOP, BOTH
 import ttkbootstrap as ttk
-from ttkbootstrap.constants import PRIMARY, SECONDARY
+from ttkbootstrap.constants import PRIMARY
 
 from gui.session import DesignSession, EVT_STEP, EVT_BAND, EVT_GENERATED
 
-PAD_S, PAD_M = 4, 8
+from gui.constants import PAD_S, PAD_M
 
 # (label, one-line help shown when active)
 STEPS: List[Tuple[str, str]] = [
@@ -30,13 +30,13 @@ class StepRail:
         self._buttons = []
 
         for i, (label, _help) in enumerate(STEPS):
-            b = ttk.Button(self.frame, text=label, bootstyle=SECONDARY,
+            b = ttk.Button(self.frame, text=label, bootstyle="secondary-outline",
                            command=lambda i=i: self._select(i))
             b.pack(side=TOP, fill=X, pady=(0, PAD_S))
             self._buttons.append(b)
 
         self.help = ttk.Label(self.frame, text=STEPS[0][1], wraplength=130,
-                              bootstyle=SECONDARY, justify="left")
+                              justify="left")
         self.help.pack(side=TOP, fill=X, pady=(PAD_M, 0))
 
         session.subscribe(self._refresh)
@@ -56,7 +56,7 @@ class StepRail:
             mark = "✓ " if done else ""
             base = STEPS[i][0]
             b.configure(text=mark + base,
-                        bootstyle=PRIMARY if i == active else SECONDARY)
+                        bootstyle=PRIMARY if i == active else "secondary-outline")
         self.help.configure(text=STEPS[active][1])
 
     def _is_done(self, i: int) -> bool:

@@ -4,11 +4,11 @@ from __future__ import annotations
 from typing import Callable
 from tkinter import X, StringVar
 import ttkbootstrap as ttk
-from ttkbootstrap.constants import PRIMARY, SECONDARY, SUCCESS
+from ttkbootstrap.constants import PRIMARY, SUCCESS
 
 from gui.session import DesignSession, EVT_GENERATED
 
-PAD_S, PAD_M = 4, 8
+from gui.constants import PAD_S, PAD_M
 
 
 class ExportStep:
@@ -25,15 +25,14 @@ class ExportStep:
         row = ttk.Frame(box)
         row.pack(fill=X)
         for fmt in ("svg", "dxf", "pdf"):
-            ttk.Button(row, text=fmt.upper(), bootstyle=SECONDARY,
+            ttk.Button(row, text=fmt.upper(), bootstyle="secondary-outline",
                        command=lambda f=fmt: on_export(f)).pack(
                 side="left", expand=True, fill=X, padx=PAD_S)
 
         ttk.Button(self.frame, text="Save to Library", bootstyle=SUCCESS,
                    command=on_save).pack(fill=X)
 
-        self.hint = ttk.Label(self.frame, text="Generate a design before exporting.",
-                              bootstyle=SECONDARY)
+        self.hint = ttk.Label(self.frame, text="Generate a design before exporting.")
         self.hint.pack(anchor="w", pady=(PAD_M, 0))
         session.subscribe(self._refresh)
 

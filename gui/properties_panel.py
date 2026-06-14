@@ -8,7 +8,15 @@ from ttkbootstrap.constants import SECONDARY, SUCCESS, WARNING, DANGER
 from gui.session import DesignSession, EVT_GENERATED
 from gui.scrollframe import ScrollFrame
 
-PAD_S, PAD_M = 4, 8
+from gui.constants import PAD_S, PAD_M
+
+
+def _fmt_vswr(v):
+    try:
+        x = float(v)
+    except (TypeError, ValueError):
+        return str(v)
+    return ">10" if x >= 10 else f"{x:.2f}"
 
 
 def _vswr_level(vswr: float) -> str:
@@ -29,14 +37,14 @@ class PropertiesPanel:
         head = ttk.Frame(self.body)
         head.pack(fill=X)
         ttk.Label(head, text="Performance", font=("", 10, "bold")).pack(side="left")
-        ttk.Button(head, text="Analysis…", bootstyle=SECONDARY,
+        ttk.Button(head, text="Analysis…", bootstyle="secondary-outline",
                    command=self._open_analysis).pack(side="right")
         self.chips = ttk.Frame(self.body)
         self.chips.pack(fill=X, pady=(PAD_S, PAD_M))
 
         self.summary = StringVar(value="No design yet.")
         ttk.Label(self.body, textvariable=self.summary, wraplength=250,
-                  bootstyle=SECONDARY, justify="left").pack(anchor="w")
+                  justify="left").pack(anchor="w")
 
         ttk.Label(self.body, text="Warnings", font=("", 10, "bold")).pack(
             anchor="w", pady=(PAD_M, PAD_S))
@@ -48,7 +56,7 @@ class PropertiesPanel:
             anchor="w", pady=(PAD_M, PAD_S))
         self.feed = StringVar(value="—")
         ttk.Label(self.body, textvariable=self.feed, wraplength=250,
-                  bootstyle=SECONDARY, justify="left").pack(anchor="w")
+                  justify="left").pack(anchor="w")
 
         session.subscribe(self._refresh)
 
@@ -75,7 +83,7 @@ class PropertiesPanel:
             f = key.replace("freq_", "").replace("_mhz", "")
             try:
                 vnum = float(vswr)
-                vtext, level = f"{vnum:.2f}", _vswr_level(vnum)
+                vtext, level = _fmt_vswr(vnum), _vswr_level(vnum)
             except (TypeError, ValueError):
                 vtext, level = str(vswr), SECONDARY  # tuned designs may give "~2.5"
             chip = ttk.Label(self.chips, text=f"{f} MHz  VSWR {vtext}",
@@ -83,9 +91,21 @@ class PropertiesPanel:
             chip.pack(anchor="w", pady=1)
 
         summ = metrics.get("summary", {})
-        self.summary.set(f"Avg VSWR: {summ.get('avg_vswr', '—')}\n"
-                         f"Avg gain: {summ.get('avg_gain_dbi', '—')} dBi\n"
-                         f"Type: {r.get('design_type', '—')}")
+        avg_gain_raw = summ.get("avg_gain_dbi", "—")
+        try:
+            gain_num = float(avg_gain_raw)
+            gain_text = f"{gain_num:.1f} dBi"
+        except (TypeError, ValueError):
+            gain_num = None
+            gain_text = f"{avg_gain_raw} dBi" if avg_gain_raw not in (None, "—") else "—"
+        lines = [
+            f"Avg VSWR: {_fmt_vswr(summ.get('avg_vswr', '—'))}",
+            f"Avg gain: {gain_text}",
+            f"Type: {r.get('design_type', '—')}",
+        ]
+        if gain_num is not None and gain_num < -5:
+            lines.append("Very low gain — this design barely radiates.")
+        self.summary.set("\n".join(lines))
 
         warnings = (r.get("validation", {}) or {}).get("warnings", [])
         self.warn.set("\n".join(f"• {w}" for w in warnings) if warnings else "None")

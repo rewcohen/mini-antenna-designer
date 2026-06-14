@@ -3,11 +3,11 @@ from __future__ import annotations
 
 from tkinter import X, BooleanVar
 import ttkbootstrap as ttk
-from ttkbootstrap.constants import SECONDARY, ROUND
+from ttkbootstrap.constants import ROUND
 
 from gui.session import DesignSession, EVT_INPUTS
 
-PAD_S, PAD_M = 4, 8
+from gui.constants import PAD_S, PAD_M
 
 
 def _trace_quality(mil: float) -> str:
@@ -51,7 +51,7 @@ class TraceStep:
     def _slider(self, parent, label, lo, hi, value, attr):
         row = ttk.Frame(parent)
         row.pack(fill=X, pady=(PAD_S, 0))
-        lab = ttk.Label(row, text=f"{label}: {value:g}", bootstyle=SECONDARY)
+        lab = ttk.Label(row, text=f"{label}: {value:g}")
         lab.pack(anchor="w")
         s = ttk.Scale(row, from_=lo, to=hi, value=value,
                       command=lambda v, a=attr, l=lab, t=label: self._on_slider(a, l, t, v))

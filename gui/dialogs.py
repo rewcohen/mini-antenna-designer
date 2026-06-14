@@ -75,6 +75,8 @@ class WizardDialog:
                    command=self._use).pack(side=LEFT, padx=3)
         ttk.Button(btns, text="Close", bootstyle=SECONDARY,
                    command=self.win.destroy).pack(side=RIGHT, padx=3)
+        self.win.bind("<Escape>", lambda e: self.win.destroy())
+        self.win.focus_set()
         self._find()
 
     def _svc_key(self):
@@ -179,6 +181,8 @@ class TuneDialog:
                    command=self._apply).pack(side=LEFT, padx=3)
         ttk.Button(btns, text="Close", bootstyle=SECONDARY,
                    command=self.win.destroy).pack(side=RIGHT, padx=3)
+        self.win.bind("<Escape>", lambda e: self.win.destroy())
+        self.win.focus_set()
         self._recalc()
 
     def _recalc(self):

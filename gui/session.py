@@ -41,6 +41,7 @@ class DesignSession:
         self.results: Optional[Dict] = None
         self.geometry: Optional[str] = None   # NEC2 string
         self.svg: Optional[str] = None        # in-memory SVG of current design
+        self.svg_metadata: Optional[Dict] = None  # base SVG metadata; canvas rebuilds layered previews
 
         # --- Wizard position ---
         self.active_step: int = 0

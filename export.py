@@ -257,6 +257,13 @@ class VectorExporter:
             logger.warning(f"Surface patch to wires conversion error: {str(e)}")
             return []
 
+    def _layer_enabled(self, metadata, name, default=True):
+        """Whether overlay layer ``name`` should render (default True for callers without a layers dict)."""
+        layers = (metadata or {}).get('layers') if metadata else None
+        if not layers:
+            return default
+        return bool(layers.get(name, default))
+
     def _generate_svg_content(self, wire_segments: List[tuple],
                             metadata: Optional[Dict] = None) -> str:
         """Generate SVG content for wire segments with professional labeling and trace validation."""
@@ -317,8 +324,18 @@ class VectorExporter:
             # Combine all paths
             paths_str = '\n    '.join(paths)
 
-            # Generate professional labels and annotations including trace validation and contact pads
-            annotations = self._generate_svg_annotations(wire_segments, transform, total_width, total_height, metadata, trace_validation)
+            # Build optional overlay layers (each defaults to enabled so existing callers are unchanged).
+            grid_svg = (f'<g stroke="#e0e0e0" stroke-width="0.5" opacity="0.5">\n    '
+                        f'{self._generate_grid_lines(width, height, transform)}\n  </g>'
+                        ) if self._layer_enabled(metadata, 'grid') else ''
+            annotations = self._generate_svg_annotations(
+                wire_segments, transform, total_width, total_height, metadata, trace_validation
+            ) if self._layer_enabled(metadata, 'annotations') else ''
+            annotations_svg = f'<g id="annotations">{annotations}</g>' if annotations else ''
+            pattern_svg = self._generate_pattern_overlay(
+                transform, metadata, width, height) if self._layer_enabled(metadata, 'pattern') else ''
+            feed_svg = self._generate_feed_markers(
+                transform, metadata) if self._layer_enabled(metadata, 'feed') else ''
 
             # Generate SVG with professional layout
             svg = f'''<?xml version="1.0" encoding="UTF-8"?>
@@ -342,23 +359,21 @@ class VectorExporter:
   <rect width="{width:.1f}" height="{height:.1f}" fill="white" stroke="black" stroke-width="2"/>
   
   <!-- Grid lines for alignment (optional) -->
-  <g stroke="#e0e0e0" stroke-width="0.5" opacity="0.5">
-    {self._generate_grid_lines(width, height, transform)}
-  </g>
-  
+  {grid_svg}
+
   <!-- Antenna wire segments -->
   <g stroke-linecap="round" stroke-linejoin="round" id="antenna-traces">
     {paths_str}
   </g>
-  
+
   <!-- Professional annotations -->
-  {annotations}
+  {annotations_svg}
 
   <!-- Predicted radiation pattern overlay -->
-  {self._generate_pattern_overlay(transform, metadata, width, height)}
+  {pattern_svg}
 
   <!-- Connection / feed points -->
-  {self._generate_feed_markers(transform, metadata)}
+  {feed_svg}
 
 </svg>'''
 
@@ -642,8 +657,8 @@ class VectorExporter:
             else:
                 annotations.append(f'<text x="{title_x}" y="{contact_pad_y + 15}" class="dimension-text">Status: Unknown</text>')
 
-            # Overall dimensions
-            dim_y = trace_y + 120
+            # Overall dimensions (below the contact-pad block so they don't overlap)
+            dim_y = contact_pad_y + 80
             annotations.append(f'<text x="{title_x}" y="{dim_y}" class="label-text">DIMENSIONS:</text>')
             annotations.append(f'<text x="{title_x}" y="{dim_y + 15}" class="dimension-text">Design Width: {total_width:.3f} inches ({total_width*1000:.0f} mils)</text>')
             annotations.append(f'<text x="{title_x}" y="{dim_y + 30}" class="dimension-text">Design Height: {total_height:.3f} inches ({total_height*1000:.0f} mils)</text>')

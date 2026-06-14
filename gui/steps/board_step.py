@@ -3,11 +3,10 @@ from __future__ import annotations
 
 from tkinter import X, StringVar
 import ttkbootstrap as ttk
-from ttkbootstrap.constants import SECONDARY
 
 from gui.session import DesignSession, EVT_INPUTS
 
-PAD_S, PAD_M = 4, 8
+from gui.constants import PAD_S, PAD_M
 
 # name -> (epsilon_r, thickness_mm)
 _MATERIALS = {
@@ -41,7 +40,7 @@ class BoardStep:
                           values=list(_MATERIALS), width=28)
         cb.pack(fill=X)
         cb.bind("<<ComboboxSelected>>", self._on_material)
-        self.info = ttk.Label(mat, text="", bootstyle=SECONDARY)
+        self.info = ttk.Label(mat, text="")
         self.info.pack(anchor="w", pady=(PAD_S, 0))
         self._on_material()
 
