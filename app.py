@@ -162,6 +162,14 @@ class AntennaDesignerApp:
                 self.nec,
                 substrate_width=self.session.substrate_width,
                 substrate_height=self.session.substrate_height)
+            # Carry the chosen material onto the meander instance so the generator
+            # reflects the user's substrate (epsilon + thickness in inches, matching
+            # AdvancedMeanderTrace's own units). NOTE: the current resonance model
+            # (design.calculate_target_length) sizes to free-space lambda/2 x coupling
+            # factor and does not yet apply effective permittivity, so material does
+            # not change trace length until a velocity-factor term is added.
+            generator.advanced_meander.substrate_epsilon = self.session.substrate_epsilon
+            generator.advanced_meander.substrate_thickness = self.session.substrate_thickness_mm / 25.4
             result = generator.generate_design(
                 self.session.band,
                 trace_width_inches=self.session.trace_width_mil / 1000.0,
