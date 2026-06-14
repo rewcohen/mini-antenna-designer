@@ -1,81 +1,72 @@
 #!/bin/bash
+# Mini Antenna Designer Launcher (Unix/Linux/Mac) - robust, dependency-aware
+cd "$(dirname "$0")" || exit 1
 
-# Mini Antenna Designer Launcher (Unix/Linux/Mac)
 echo "================================================"
-echo "  Mini Antenna Designer - Professional Launcher"
+echo "  Mini Antenna Designer - Launcher"
 echo "================================================"
 echo ""
 
-# Check if we're in a virtual environment
-if [ -n "$VIRTUAL_ENV" ]; then
-    echo "Using virtual environment: $VIRTUAL_ENV"
+# --- 1. Find a Python interpreter ------------------------------------------
+if command -v python3 &> /dev/null; then
+    PY="python3"
+elif command -v python &> /dev/null; then
+    PY="python"
 else
-    # Try to find and activate venv
-    if [ -f "venv/bin/activate" ]; then
-        echo "Found virtual environment at venv/bin/activate"
-        source venv/bin/activate
-    elif [ -f "env/bin/activate" ]; then
-        echo "Found virtual environment at env/bin/activate"
-        source env/bin/activate
-    else
-        echo "WARNING: No virtual environment found. Installing dependencies globally..."
-    fi
+    echo "ERROR: Python not found."
+    echo "Install Python 3.8+ from https://www.python.org/downloads/ (or your package manager)."
+    exit 1
+fi
+echo "Using interpreter: $PY ($($PY --version 2>&1))"
+
+# --- 2. Activate a virtual environment if one exists -----------------------
+if [ -n "$VIRTUAL_ENV" ]; then
+    echo "Virtual environment active: $VIRTUAL_ENV"
+elif [ -f "venv/bin/activate" ]; then
+    source venv/bin/activate && PY="python"
+elif [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate && PY="python"
 fi
 
+# --- 3. Ensure pip ---------------------------------------------------------
+$PY -m pip --version &> /dev/null || $PY -m ensurepip --upgrade &> /dev/null
+
+# --- 4. Install dependencies only if something is missing ------------------
 echo ""
-echo "Checking Python environment..."
-if ! command -v python &> /dev/null && ! command -v python3 &> /dev/null; then
-    echo "ERROR: Python not found in PATH"
-    echo "Please install Python 3.8+ and ensure it's in your PATH"
+echo "Checking dependencies..."
+if ! $PY -c "import numpy, scipy, matplotlib, shapely, ezdxf, loguru" &> /dev/null; then
+    echo "Installing missing dependencies from requirements.txt ..."
+    $PY -m pip install --upgrade pip &> /dev/null
+    if ! $PY -m pip install -r requirements.txt; then
+        echo ""
+        echo "ERROR: Dependency installation failed."
+        echo "Run manually to see the error:  $PY -m pip install -r requirements.txt"
+        exit 1
+    fi
+else
+    echo "All core dependencies present."
+fi
+
+# --- 5. Verify the GUI toolkit --------------------------------------------
+if ! $PY -c "import tkinter" &> /dev/null; then
+    echo ""
+    echo "ERROR: tkinter (GUI toolkit) is not available."
+    echo "  Debian/Ubuntu: sudo apt install python3-tk"
+    echo "  Fedora:        sudo dnf install python3-tkinter"
+    echo "  macOS:         install Python from python.org (includes Tk)"
     exit 1
 fi
 
-# Use python3 if python command doesn't exist
-if command -v python3 &> /dev/null; then
-    PYTHON_CMD="python3"
-else
-    PYTHON_CMD="python"
-fi
-
-echo "Using Python: $($PYTHON_CMD --version)"
-
-echo ""
-echo "Installing/updating dependencies..."
-$PYTHON_CMD -m pip install -r requirements.txt --quiet
-if [ $? -ne 0 ]; then
-    echo "WARNING: Some dependencies may have failed to install"
-    echo "Trying to continue anyway..."
-fi
-
-echo ""
-echo "Running pre-launch validation tests..."
-$PYTHON_CMD validate.py
-if [ $? -ne 0 ]; then
-    echo "WARNING: Validation tests failed. The application may not work correctly."
-    read -p "Continue anyway? (y/N): " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        echo "Launch cancelled by user."
-        exit 1
-    fi
-fi
-
+# --- 6. Launch -------------------------------------------------------------
 echo ""
 echo "================================================"
 echo "  Starting Mini Antenna Designer..."
-echo "================================================="
-echo "Press Ctrl+C to stop the application"
+echo "================================================"
 echo ""
-
-$PYTHON_CMD main.py
+$PY main.py
 exit_code=$?
-
 if [ $exit_code -ne 0 ]; then
     echo ""
     echo "Application exited with error code $exit_code"
-    echo "Check antenna_designer.log for detailed error information"
+    echo "Check antenna_designer.log for details."
 fi
-
-echo ""
-echo "Press Enter to exit..."
-read -r

@@ -1906,6 +1906,8 @@ Warnings:
                 'fitness_score': ".3f" if self.current_results else 'N/A',
                 'substrate_width': float(self.substrate_width_var.get()),
                 'substrate_height': float(self.substrate_height_var.get()),
+                'design_type': self.current_results.get('design_type') if self.current_results else None,
+                'band_name': self.current_results.get('band_name') if self.current_results else None,
                 # Per-resonator feed pads + advice so the SVG marks/labels them.
                 'connection_points': self.current_results.get('connection_points', []) if self.current_results else [],
                 'feed_advice': self.current_results.get('feed_advice', []) if self.current_results else [],

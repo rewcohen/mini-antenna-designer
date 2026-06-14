@@ -41,7 +41,7 @@ def test_wifi_advanced_meander():
         
         logger.info(f"Design generation: {'SUCCESS' if success else 'FAILED'}")
         logger.info(f"Design type: {design_type}")
-        logger.info(f"Expected: advanced_meander_tri_band")
+        logger.info(f"Expected: meander_array_close")
         logger.info(f"Geometry generated: {'YES' if geometry else 'NO'}")
         
         # Print results
@@ -50,13 +50,13 @@ def test_wifi_advanced_meander():
         print(f"{'='*60}")
         print(f"Band: {wifi_band.name}")
         print(f"Frequencies: {wifi_band.frequencies}")
-        print(f"Expected: advanced_meander_tri_band")
+        print(f"Expected: meander_array_close")
         print(f"Actual: {design_type}")
         print(f"Success: {'✓ PASS' if success else '✗ FAIL'}")
         print(f"Geometry: {'✓ GENERATED' if geometry else '✗ NOT GENERATED'}")
         
         # Check if it's working correctly
-        if success and design_type == 'advanced_meander_tri_band':
+        if success and design_type == 'meander_array_close':
             print(f"\n✓ WiFi 2.4GHz advanced meander test PASSED")
             print("The advanced meander functionality is working correctly!")
             return True

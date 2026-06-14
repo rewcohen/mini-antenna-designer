@@ -31,27 +31,27 @@ def test_advanced_meanders():
             {
                 'name': 'Close frequencies (should trigger tri-band meander)',
                 'frequencies': (2400, 2450, 2500),  # Very close frequencies
-                'expected_type': 'advanced_meander_tri_band'
+                'expected_type': 'meander_array_close'
             },
             {
                 'name': 'Medium separation (should trigger dual-band meander)',
                 'frequencies': (2400, 3500, 5500),  # Medium separation
-                'expected_type': 'advanced_meander_dual'
+                'expected_type': 'meander_array_medium'
             },
             {
                 'name': 'Large separation (should trigger compound meander)',
                 'frequencies': (900, 2400, 5800),  # Large separation
-                'expected_type': 'advanced_meander_compound'
+                'expected_type': 'meander_array_wide'
             },
             {
                 'name': 'WiFi 2.4GHz Extended (close frequencies)',
                 'frequencies': (2412, 2437, 2462),  # Real WiFi band
-                'expected_type': 'advanced_meander_tri_band'
+                'expected_type': 'meander_array_close'
             },
             {
                 'name': 'Cellular LTE (medium separation)',
                 'frequencies': (700, 1800, 2600),  # Real LTE band
-                'expected_type': 'advanced_meander_dual'
+                'expected_type': 'meander_array_medium'
             }
         ]
         

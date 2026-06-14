@@ -134,20 +134,20 @@ class AntennaDesignGenerator:
         # Check for special cases
         from presets import BandType
         if frequency_band.band_type == BandType.SATELLITE:
-            logger.info(f"  Selected: helical_spiral (satellite band)")
-            return 'helical_spiral'  # For GNSS/satellite
+            logger.info(f"  Selected: planar_spiral (satellite band)")
+            return 'planar_spiral'  # For GNSS/satellite
         # Removed TV_BROADCAST hardcoding - let it use ratio-based selection for compact designs
 
         # Determine based on frequency separation (average of pairwise ratios).
         if avg_ratio < 1.5:  # Close frequencies
-            logger.info(f"  Selected: advanced_meander_tri_band (close frequencies, ratio < 1.5)")
-            return 'advanced_meander_tri_band'  # Closely spaced bands
+            logger.info(f"  Selected: meander_array_close (close frequencies, ratio < 1.5)")
+            return 'meander_array_close'  # Closely spaced bands
         elif avg_ratio < 3.0:  # Medium separation
-            logger.info(f"  Selected: advanced_meander_dual (medium separation, 1.5 <= ratio < 3.0)")
-            return 'advanced_meander_dual'  # Moderately spaced bands
+            logger.info(f"  Selected: meander_array_medium (medium separation, 1.5 <= ratio < 3.0)")
+            return 'meander_array_medium'  # Moderately spaced bands
         else:  # Large separation
-            logger.info(f"  Selected: advanced_meander_compound (large separation, ratio >= 3.0)")
-            return 'advanced_meander_compound'  # Widely spaced bands
+            logger.info(f"  Selected: meander_array_wide (large separation, ratio >= 3.0)")
+            return 'meander_array_wide'  # Widely spaced bands
 
     def _generate_geometry_for_type(self, design_type: str, f1: float, f2: float, f3: float, 
                                    trace_width_inches: float = None, add_contact_pads: bool = False) -> str:
@@ -188,7 +188,7 @@ class AntennaDesignGenerator:
                 geom3 = self.designer.generate_spiral_coil(f3, turns=3)
             geometrics.extend([geom1, geom2, geom3])
 
-        elif design_type == 'helical_spiral':
+        elif design_type == 'planar_spiral':
             # Helical design for satellite applications
             if add_contact_pads:
                 geom1 = self.designer.generate_spiral_coil_with_pads(f1, turns=5, spacing=0.005, add_contact_pads=True)
@@ -200,17 +200,17 @@ class AntennaDesignGenerator:
             # Proper log-periodic antenna design for TV bands
             geometrics = self._generate_proper_log_periodic(f1, f2, f3)
 
-        elif design_type == 'advanced_meander_tri_band':
+        elif design_type == 'meander_array_close':
             # Advanced meander design for tri-band operation
-            geometrics = self._generate_advanced_meander_tri_band(f1, f2, f3, trace_width_inches)
+            geometrics = self._generate_meander_array_close(f1, f2, f3, trace_width_inches)
 
-        elif design_type == 'advanced_meander_dual':
+        elif design_type == 'meander_array_medium':
             # Advanced meander design for dual-band operation
-            geometrics = self._generate_advanced_meander_dual(f1, f2, f3, trace_width_inches)
+            geometrics = self._generate_meander_array_medium(f1, f2, f3, trace_width_inches)
 
-        elif design_type == 'advanced_meander_compound':
+        elif design_type == 'meander_array_wide':
             # Compound advanced meander design
-            geometrics = self._generate_advanced_meander_compound(f1, f2, f3)
+            geometrics = self._generate_meander_array_wide(f1, f2, f3)
 
         else:
             # Default to tri-compound
@@ -601,7 +601,7 @@ class AntennaDesignGenerator:
             logger.warning(f"Failed to add boom structure: {str(e)}")
             return ""
 
-    def _generate_advanced_meander_tri_band(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
+    def _generate_meander_array_close(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
         """Generate a separate meandered resonator for each of the (closely spaced) bands."""
         try:
             logger.info(f"Generating tri-band design (separate resonators) for {f1}/{f2}/{f3} MHz")
@@ -625,7 +625,7 @@ class AntennaDesignGenerator:
             logger.error(f"Advanced meander tri-band generation failed: {str(e)}")
             return [self.designer.generate_dipole(f1, use_meandering=True)]
 
-    def _generate_advanced_meander_dual(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
+    def _generate_meander_array_medium(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
         """Generate a separate meandered resonator for each (moderately spaced) band."""
         try:
             logger.info(f"Generating dual-band design (separate resonators) for {f1}/{f2}/{f3} MHz")
@@ -649,7 +649,7 @@ class AntennaDesignGenerator:
             logger.error(f"Advanced meander dual-band generation failed: {str(e)}")
             return [self.designer.generate_dipole(f1, use_meandering=True)]
     
-    def _generate_advanced_meander_compound(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
+    def _generate_meander_array_wide(self, f1: float, f2: float, f3: float, trace_width_inches: float = None) -> List[str]:
         """Generate a separate meandered resonator for each widely separated band.
 
         Each band gets its own element in its own substrate stripe, sized to its
