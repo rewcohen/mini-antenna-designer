@@ -1920,12 +1920,18 @@ class AdvancedMeanderTrace:
             # Calculate average frequency for unified design
             avg_freq = sum(frequencies) / len(frequencies)
 
-            # Very aggressive trace width for maximum length in substrate
+            # Target the resonant length of the LOWEST band (the longest, hardest
+            # to fit). Summing per-band lengths is physically meaningless: a single
+            # meandered trace is not the sum of each band's half-wave. The longest
+            # half-wave sets resonance; higher bands fall on the trace's harmonics.
+            per_band = {f: self.extract_target_length(f) for f in frequencies}
+            target_length = max(per_band.values())  # = lowest frequency's half-wave
+
             unified.update({
                 'trace_width': 0.008,  # 8 mil traces
                 'coupling_factor': 0.92,  # Balanced coupling
                 'bend_radius': 0.0008,  # 0.8mm bends
-                'target_electrical_length': sum(self.extract_target_length(f) for f in frequencies) * 1.2,
+                'target_electrical_length': target_length,
                 'substrate_utilization_priority': True
             })
 
@@ -1966,39 +1972,17 @@ class AdvancedMeanderTrace:
             logger.info(f"Generating unified substrate meander: target={target_length:.2f}\", "
                        f"bounds=({max_x:.3f}\", {max_y:.3f}\"), trace={trace_width*1000:.0f}mil")
 
-            # Create dual spiral arms that fill the entire substrate
-            geometry = []
-            gw_tag = 1
-
-            # Create dual spirals that efficiently fill the entire substrate vertically
-            # Don't use artificial region restrictions - let spirals fill full height with controlled spacing
-
-            # Generate positive spiral starting from top, filling downward
-            positive_segments, pos_tag = self._generate_max_density_spiral(
-                center_x=0, center_y=max_y * 0.9, target_length=target_length/2,
-                max_x=max_x, max_y=max_y, direction='down',  # Start high, fill downward
-                trace_width=trace_width, side_name='unified_positive',
-                start_tag=gw_tag
+            # Generate a single regular serpentine that achieves the target length.
+            geometry, achieved = self._generate_serpentine_fill(
+                target_length=target_length, max_x=max_x, max_y=max_y,
+                trace_width=trace_width, bend_radius=bend_radius, start_tag=1
             )
-
-            # Generate negative spiral starting from bottom, filling upward
-            negative_segments, neg_tag = self._generate_max_density_spiral(
-                center_x=0, center_y=-max_y * 0.9, target_length=target_length/2,
-                max_x=max_x, max_y=max_y, direction='up',  # Start low, fill upward
-                trace_width=trace_width, side_name='unified_negative',
-                start_tag=pos_tag
-            )
-
-            # Combine all segments
-            geometry.extend(positive_segments)
-            geometry.extend(negative_segments)
-
-            # Add feed connection
-            geometry.append(f"GW {neg_tag} 1 0 0 0 0 0 0 {trace_width:.4f}")
 
             result = "\n".join(geometry)
             logger.info(f"Generated unified substrate meander: {len(geometry)} segments, "
-                       f"{len(result.split())} total lines")
+                       f"achieved={achieved:.2f}\" of {target_length:.2f}\" target "
+                       f"({achieved/target_length*100:.1f}%)" if target_length > 0 else
+                       f"Generated unified substrate meander: {len(geometry)} segments")
 
             return result
 
@@ -2006,135 +1990,92 @@ class AdvancedMeanderTrace:
             logger.error(f"Unified substrate meander generation failed: {str(e)}")
             return ""
 
-    def _generate_max_density_spiral(self, center_x: float, center_y: float, target_length: float,
-                                   max_x: float, max_y: float, direction: str,
-                                   trace_width: float, side_name: str, start_tag: int) -> tuple:
-        """Generate a maximum-density spiral that fills the entire substrate with dense meanders.
-        This version allows unlimited vertical range for optimal substrate utilization.
+    def _generate_serpentine_fill(self, target_length: float, max_x: float, max_y: float,
+                                  trace_width: float, bend_radius: float = 0.0008,
+                                  start_tag: int = 1) -> tuple:
+        """Generate a regular serpentine (boustrophedon) meander of a target length.
 
-        Args:
-            center_x, center_y: Center coordinates for spiral
-            target_length: Target electrical length
-            max_x, max_y: Maximum bounds (full substrate limits)
-            direction: 'up' or 'down' - preferred direction but can go anywhere
-            trace_width: Trace width
-            side_name: Name for logging
-            start_tag: Starting GW tag
+        Lays full-width horizontal lanes connected by short vertical jogs, forming a
+        regular comb. The number of lanes is chosen so the total conductor length
+        (horizontal lanes + vertical jogs) equals ``target_length``; the final lane is
+        truncated to land on the target as closely as the geometry allows. Lanes are
+        spread evenly across the full substrate height so the pattern fills the board
+        and looks regular rather than random.
+
+        If the substrate cannot physically hold ``target_length`` it is filled to
+        capacity and a warning is logged (the antenna will then resonate above the
+        intended frequency). All coordinates are in inches, centred on the origin.
 
         Returns:
-            tuple: (geometry segments, final tag)
+            tuple: (list of GW card strings, achieved conductor length in inches)
         """
         try:
-            geometry = []
-            gw_tag = start_tag
-            current_length = 0.0
-            current_x = center_x
-            current_y = center_y
+            lane_width = 2 * max_x          # full usable width of one horizontal lane
+            usable_height = 2 * max_y
+            min_pitch = max(trace_width * 3.0, 2 * bend_radius + trace_width)
 
-            # For maximum density, use the full available substrate area
-            available_height = max_y * 2  # Total substrate height
+            if lane_width <= 0 or usable_height <= 0 or target_length <= 0:
+                logger.error("Serpentine fill: non-positive bounds or target")
+                return [], 0.0
 
-            # Calculate minimum viable vertical spacing for maximum density
-            min_vertical_spacing = trace_width * 1.2  # Reduced to maximize packing density
-            segment_length = max_x * 0.98  # Use 98% of available width
+            # Lane capacity limited by minimum lane-to-lane spacing.
+            max_lanes = max(1, int(usable_height / min_pitch) + 1)
+            # Lanes needed: horizontal runs carry almost all of the length.
+            lanes_needed = max(1, math.ceil(target_length / lane_width))
 
-            # Calculate maximum possible passes across entire substrate
-            max_possible_passes = min(50, int(available_height / min_vertical_spacing))
+            if lanes_needed > max_lanes:
+                capacity = max_lanes * lane_width + (max_lanes - 1) * min_pitch
+                logger.warning(f"Serpentine fill: target {target_length:.2f}\" exceeds substrate "
+                               f"capacity {capacity:.2f}\" ({max_lanes} lanes max) - filling fully; "
+                               f"antenna will resonate above the intended frequency")
+                lanes_needed = max_lanes
 
-            # Distribute passes evenly across available height for maximum utilization
-            if max_possible_passes > 1:
-                step_size = available_height / max_possible_passes
-                # Ensure minimum spacing is maintained but maximize passes
-                step_size = max(min_vertical_spacing, step_size)
+            # Spread the needed lanes evenly over the full height (but never tighter
+            # than the minimum spacing).
+            if lanes_needed > 1:
+                pitch = max(min_pitch, usable_height / (lanes_needed - 1))
             else:
-                step_size = min_vertical_spacing
+                pitch = 0.0
 
-            logger.debug(f"{side_name} max density spiral: full substrate utilization, "
-                        f"{max_possible_passes} max passes, step_size={step_size:.3f}\", "
-                        f"segment_length={segment_length:.3f}\", start=({center_x:.2f}, {center_y:.2f})")
+            geometry = []
+            tag = start_tag
+            current_length = 0.0
+            y = max_y                       # start at the top edge
+            x = -max_x                      # start at the left edge
+            direction = 1                   # +1 = rightward
 
-            meander_pass = 0
-            horizontal_direction = 1
-
-            # Fill the substrate completely in a dense meander pattern
-            # Continue until we've generated sufficient length or hit maximum passes
-            while (current_length < target_length * 1.2) and (meander_pass < max_possible_passes):
-                # Check if we've reached substrate bounds
-                if abs(current_y) >= max_y:
-                    logger.debug(f"{side_name} reached substrate boundary at y={current_y:.3f}, stopping")
+            for lane in range(lanes_needed):
+                # Horizontal lane, truncated if only a partial run is needed.
+                remaining = target_length - current_length
+                if remaining <= 0:
                     break
+                run = min(lane_width, remaining)
+                x_end = x + direction * run
+                geometry.append(f"GW {tag} 1 {x:.4f} {y:.4f} 0 "
+                               f"{x_end:.4f} {y:.4f} 0 {trace_width:.4f}")
+                tag += 1
+                current_length += run
+                x = x_end
 
-                # Horizontal segment - use full available width per pass
-                segment_end_x = current_x + horizontal_direction * segment_length
-
-                # Clamp to substrate horizontal bounds
-                if abs(segment_end_x) > max_x:
-                    segment_end_x = max_x if horizontal_direction > 0 else -max_x
-
-                segment_length_actual = abs(segment_end_x - current_x)
-
-                # Always create horizontal segment if meaningful
-                if segment_length_actual > 0.001:
-                    geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 "
-                                   f"{segment_end_x:.4f} {current_y:.4f} 0 {trace_width:.4f}")
-                    gw_tag += 1
-                    current_length += segment_length_actual
-
-                current_x = segment_end_x
-
-                # Add vertical segment to fill more height
-                # Use preferred direction but switch if needed to stay within bounds
-                if direction == 'up':
-                    preferred_next_y = current_y + step_size
-                    # Switch to down if we'd exceed bounds
-                    if preferred_next_y > max_y:
-                        preferred_next_y = current_y - step_size
-                else:
-                    preferred_next_y = current_y - step_size
-                    # Switch to up if we'd exceed bounds
-                    if preferred_next_y < -max_y:
-                        preferred_next_y = current_y + step_size
-
-                # Only add vertical segment if within substrate bounds
-                if abs(preferred_next_y) <= max_y:
-                    segment_length_vertical = abs(preferred_next_y - current_y)
-
-                    if segment_length_vertical > 0.001:
-                        geometry.append(f"GW {gw_tag} 1 {current_x:.4f} {current_y:.4f} 0 "
-                                       f"{current_x:.4f} {preferred_next_y:.4f} 0 {trace_width:.4f}")
-                        gw_tag += 1
-                        current_length += segment_length_vertical
-                        current_y = preferred_next_y
-                        horizontal_direction *= -1  # Reverse direction for next pass
-                    else:
-                        logger.debug(f"{side_name} cannot move vertically at pass {meander_pass}, stopping")
-                        break
-                else:
-                    logger.debug(f"{side_name} vertical move would exceed substrate at pass {meander_pass}, stopping")
+                # Vertical jog to the next lane (skip after the last lane / at target).
+                next_y = y - pitch
+                if lane == lanes_needed - 1 or next_y < -max_y - 1e-6 or current_length >= target_length:
                     break
+                jog = min(pitch, target_length - current_length)
+                geometry.append(f"GW {tag} 1 {x:.4f} {y:.4f} 0 "
+                               f"{x:.4f} {y - jog:.4f} 0 {trace_width:.4f}")
+                tag += 1
+                current_length += jog
+                y = next_y
+                direction *= -1             # reverse for the serpentine
 
-                meander_pass += 1
-
-                # Emergency break for runaway generation (shouldn't normally hit this)
-                if meander_pass >= max_possible_passes:
-                    logger.warning(f"{side_name} reached maximum passes ({max_possible_passes}) at length {current_length:.2f}\"")
-                    break
-
-            # Calculate final utilization metrics (across entire substrate)
-            final_y_span = abs(current_y - center_y)*2 + step_size  # Actual span used
-            height_utilization = min(100.0, (final_y_span / available_height) * 100)
-            width_utilization = min(100.0, (segment_length / (max_x * 2)) * 100)
-            overall_utilization = (height_utilization + width_utilization) / 2
-
-            logger.info(f"{side_name} max density spiral: {len(geometry)} segments, "
-                       f"length={current_length:.2f}\" ({current_length/target_length*100:.1f}% of target), "
-                       f"passes={meander_pass}, height_util={height_utilization:.1f}%, "
-                       f"width_util={width_utilization:.1f}%, overall={overall_utilization:.1f}%")
-
-            return geometry, gw_tag
+            logger.info(f"Serpentine fill: {len(geometry)} segments across {lanes_needed} lanes, "
+                       f"pitch={pitch:.3f}\", achieved {current_length:.2f}\" of "
+                       f"{target_length:.2f}\" target ({current_length / target_length * 100:.1f}%)")
+            return geometry, current_length
 
         except Exception as e:
-            logger.error(f"Max density spiral generation failed for {side_name}: {str(e)}")
+            logger.error(f"Serpentine fill generation failed: {str(e)}")
             import traceback
             logger.error(f"Traceback: {traceback.format_exc()}")
-            return [], start_tag
+            return [], 0.0
