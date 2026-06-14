@@ -4,7 +4,7 @@ import numpy as np
 from typing import Dict, List, Tuple, Optional
 from loguru import logger
 
-from core import NEC2Interface, compute_feed_requirements
+from core import NEC2Interface, compute_feed_requirements, AntennaAnalyzer
 from design import AntennaDesign, AdvancedMeanderTrace
 from wire_antennas import assess_meander_feasibility
 from presets import FrequencyBand, BandAnalysis
@@ -65,6 +65,16 @@ class AntennaDesignGenerator:
                 resonators, self.advanced_meander.substrate_width,
                 self.advanced_meander.substrate_height)
 
+            # Predicted azimuth radiation pattern (for review/overlay). Per resonator
+            # at its own band, plus a primary pattern at the lowest frequency.
+            primary_freq = min((f for f in [f1, f2, f3] if f > 0), default=f1)
+            radiation_pattern = AntennaAnalyzer.radiation_pattern(geometry, primary_freq)
+            band_patterns = [
+                {'label': r['label'], 'freq_mhz': r['freq_mhz'],
+                 **AntennaAnalyzer.radiation_pattern(r['geometry'], r['freq_mhz'])}
+                for r in resonators
+            ]
+
             design_result = {
                 'geometry': geometry,
                 'design_type': design_type,
@@ -77,6 +87,8 @@ class AntennaDesignGenerator:
                 'connection_points': connection_points,
                 'feed_advice': feed_advice,
                 'feasibility': feasibility,
+                'radiation_pattern': radiation_pattern,
+                'band_patterns': band_patterns,
                 'success': validation['within_bounds'] or not any(
                     issue.startswith('X extent') or issue.startswith('Y extent')
                     for issue in validation.get('bound_violations', [])

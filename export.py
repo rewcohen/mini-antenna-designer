@@ -354,6 +354,9 @@ class VectorExporter:
   <!-- Professional annotations -->
   {annotations}
 
+  <!-- Predicted radiation pattern overlay -->
+  {self._generate_pattern_overlay(transform, metadata, width, height)}
+
   <!-- Connection / feed points -->
   {self._generate_feed_markers(transform, metadata)}
 
@@ -399,6 +402,65 @@ class VectorExporter:
             markers.append(f'<text x="{ox + 15:.1f}" y="{oy:.1f}" class="label-text">FEED POINT</text>')
 
         return '\n  '.join(markers)
+
+    def _generate_pattern_overlay(self, transform_func, metadata: Optional[Dict],
+                                  svg_w: float, svg_h: float) -> str:
+        """Overlay the predicted azimuth radiation pattern on the antenna, labelled.
+
+        Drawn only when ``metadata['radiation_pattern']`` is present. The pattern is a
+        polar curve centred on the board (top-down view): gain in dBi mapped to radius,
+        with the max-gain direction, gain value, pattern type and nulls labelled.
+        """
+        pattern = (metadata or {}).get('radiation_pattern') if metadata else None
+        if not pattern or not pattern.get('gain_dbi'):
+            return ''
+
+        angles = pattern['angles_deg']
+        gains = pattern['gain_dbi']
+        gmax = max(gains)
+        gmin = min(gains)
+        span = max(gmax - gmin, 6.0)            # at least a 6 dB scale so omni still shows
+
+        cx, cy = transform_func(0, 0)           # board centre
+        r_max = 0.42 * min(svg_w, svg_h)
+        r_min = 0.12 * r_max                    # inner radius so nulls remain visible
+
+        def polar(angle_deg, gain_dbi):
+            frac = (gain_dbi - gmin) / span
+            rr = r_min + frac * (r_max - r_min)
+            a = math.radians(angle_deg)
+            return cx + rr * math.cos(a), cy - rr * math.sin(a)
+
+        pts = [polar(a, g) for a, g in zip(angles, gains)]
+        path = "M " + " L ".join(f"{x:.1f} {y:.1f}" for x, y in pts) + " Z"
+
+        out = [
+            f'<g id="radiation-pattern" opacity="0.55">',
+            f'<circle cx="{cx:.1f}" cy="{cy:.1f}" r="{r_max:.1f}" fill="none" '
+            f'stroke="#3367d6" stroke-width="1" stroke-dasharray="4 3"/>',
+            f'<path d="{path}" fill="#3367d6" fill-opacity="0.12" '
+            f'stroke="#1a3a8f" stroke-width="2"/>',
+        ]
+
+        # Max-gain direction arrow + label.
+        mx, my = polar(pattern['max_gain_dir_deg'], gmax)
+        out.append(f'<line x1="{cx:.1f}" y1="{cy:.1f}" x2="{mx:.1f}" y2="{my:.1f}" '
+                   f'stroke="#c0392b" stroke-width="2"/>')
+        out.append(f'<text x="{mx + 4:.1f}" y="{my:.1f}" class="dimension-text" '
+                   f'fill="#c0392b">max {pattern["max_gain_dbi"]:.1f} dBi @ '
+                   f'{pattern["max_gain_dir_deg"]:.0f} deg</text>')
+
+        # Null markers.
+        for nd in pattern.get('null_dirs_deg', []):
+            nx, ny = polar(nd, gmin)
+            out.append(f'<circle cx="{nx:.1f}" cy="{ny:.1f}" r="3" fill="none" '
+                       f'stroke="#888" stroke-width="1"/>')
+
+        out.append(f'<text x="{cx - r_max:.1f}" y="{cy - r_max - 6:.1f}" '
+                   f'class="label-text" fill="#1a3a8f">Radiation pattern (azimuth): '
+                   f'{pattern.get("pattern_type", "")}</text>')
+        out.append('</g>')
+        return '\n  '.join(out)
 
     def _validate_trace_widths(self, wire_segments: List[tuple]) -> Dict[str, Any]:
         """Validate trace widths for manufacturability.

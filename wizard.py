@@ -120,14 +120,19 @@ class AntennaWizard:
                                                self.substrate_height, min_efficiency=min_eff)
         meander_ok = bool(mode_feas) and all(b['feasible'] for b in mode_feas)
 
+        # Representative gain of the meander (lowest across bands).
+        meander_gain = min((a.get('gain_dbi', -50) for a in design.get('feed_advice', [])),
+                           default=-50)
         if meander_ok:
             eff = min((b['efficiency_pct'] for b in mode_feas), default=0)
             options.append({
                 'kind': 'meander',
                 'name': 'Planar meander (laser-etched on copper)',
                 'feasible': True,
+                'gain_dbi': round(meander_gain, 1),
                 'summary': f"Fits the {self.substrate_width:.0f}x{self.substrate_height:.0f} in board; "
-                           f"est. efficiency >= {eff:.0f}%. Etch and weed the copper.",
+                           f"est. gain {meander_gain:.1f} dBi, efficiency >= {eff:.0f}%. "
+                           f"Etch and weed the copper.",
                 'design': design,
             })
         else:
@@ -137,6 +142,7 @@ class AntennaWizard:
                 'kind': 'meander',
                 'name': 'Planar meander (laser-etched on copper)',
                 'feasible': False,
+                'gain_dbi': round(meander_gain, 1),
                 'summary': f"Not recommended: {why}.",
                 'design': design,
             })
@@ -147,9 +153,25 @@ class AntennaWizard:
                 'kind': 'wire',
                 'name': alt['name'],
                 'feasible': True,
-                'summary': alt['notes'],
+                'gain_dbi': round(alt.get('gain_dbi', 0.0), 1),
+                'summary': f"~{alt.get('gain_dbi', 0.0):.1f} dBi. {alt['notes']}",
                 'design': alt,
             })
+
+        # Transmit biases toward gain: put the highest-gain feasible option first
+        # and flag it as recommended. Receive keeps the simpler ordering.
+        recommended_index = None
+        if mode in ('tx', 'both'):
+            order = sorted(range(len(options)),
+                           key=lambda i: (options[i]['feasible'], options[i].get('gain_dbi', -99)),
+                           reverse=True)
+            options = [options[i] for i in order]
+            for i, o in enumerate(options):
+                if o['feasible']:
+                    o['recommended'] = True
+                    o['summary'] = "RECOMMENDED for transmit (highest gain). " + o['summary']
+                    recommended_index = i
+                    break
 
         return {
             'service': service,
@@ -159,6 +181,7 @@ class AntennaWizard:
             'frequencies_mhz': freqs,
             'wavelength_in': round(wavelength_in(primary), 1),
             'meander_feasible': meander_ok,
+            'recommended_index': recommended_index,
             'options': options,
         }
 

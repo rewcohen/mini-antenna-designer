@@ -61,6 +61,7 @@ def recommend_alternatives(freq_mhz: float) -> List[Dict]:
         },
         'feed_impedance': '~36 Ohm (close enough for direct 50 Ohm coax)',
         'balun': 'None - unbalanced, connect coax directly',
+        'gain_dbi': 1.5,
         'notes': ('One vertical copper wire on the centre pin, four radials on the '
                   'shield. Excellent, forgiving antenna for VHF/UHF.'),
     })
@@ -74,6 +75,7 @@ def recommend_alternatives(freq_mhz: float) -> List[Dict]:
         },
         'feed_impedance': '~73 Ohm',
         'balun': '1:1 current balun (balanced element on unbalanced coax)',
+        'gain_dbi': 2.15,
         'notes': 'Two straight copper wires fed in the centre. Mount clear of metal.',
     })
 
@@ -83,7 +85,8 @@ def recommend_alternatives(freq_mhz: float) -> List[Dict]:
         'dimensions': {'perimeter': _in_cm(full), 'side if square': _in_cm(full / 4)},
         'feed_impedance': '~100-130 Ohm',
         'balun': '1:1 balun; or 4:1 to get nearer 50 Ohm',
-        'notes': 'A single closed loop of copper wire. Lower noise on receive.',
+        'gain_dbi': 3.0,
+        'notes': 'A single closed loop of copper wire. Slightly more gain; lower noise on receive.',
     })
 
     if freq_mhz >= 100:
@@ -97,6 +100,7 @@ def recommend_alternatives(freq_mhz: float) -> List[Dict]:
             },
             'feed_impedance': '50 Ohm at the matching tap',
             'balun': 'Choke balun (few coax turns) recommended at the feed',
+            'gain_dbi': 2.2,
             'notes': 'End-fed half-wave with a quarter-wave matching stub - no radials needed.',
         })
     else:
@@ -109,6 +113,7 @@ def recommend_alternatives(freq_mhz: float) -> List[Dict]:
             },
             'feed_impedance': 'Very low - coupled via a small feed loop or gamma match',
             'balun': 'None; use a coupling loop + tuning capacitor',
+            'gain_dbi': -1.0,
             'notes': ('A single turn of thick copper (tube/wire) plus a tuning capacitor. '
                       'Very compact for HF but narrow-band; retune when changing frequency.'),
         })
@@ -120,6 +125,7 @@ def recommend_alternatives(freq_mhz: float) -> List[Dict]:
             },
             'feed_impedance': 'Low, needs an antenna tuner / matching network',
             'balun': 'None (unbalanced); add a common-mode choke',
+            'gain_dbi': -3.0,
             'notes': 'Trades efficiency for size; a base or centre loading coil restores resonance.',
         })
 

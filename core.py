@@ -238,6 +238,73 @@ class AntennaAnalyzer:
             'method': 'analytical',
         }
 
+    @staticmethod
+    def radiation_pattern(nec_input: str, frequency_mhz: float,
+                          n_points: int = 72) -> dict:
+        """Estimate the azimuth-plane (top-down) radiation pattern.
+
+        This is an analytical approximation, not a full-wave solve. The net dipole
+        moment of the structure is the vector sum of its segments: a straight or
+        net-directional element gives a figure-8 (broadside to that axis); a
+        symmetric meander whose folds cancel gives a near-omnidirectional pattern
+        with low gain. The pattern is the weighted blend of those two, scaled to the
+        peak gain from ``estimate``. Angles are degrees (0 = +x, CCW); gains are dBi.
+
+        Returns dict: angles_deg, gain_dbi (list), max_gain_dbi, max_gain_dir_deg,
+        null_dirs_deg, directionality (0=omni..1=figure-8), pattern_type, axis_deg.
+        """
+        geom = AntennaAnalyzer.parse_geometry(nec_input)
+        peak = AntennaAnalyzer.estimate(geom, frequency_mhz).get('gain_dbi', -50.0)
+
+        # Net dipole moment = vector sum of segments (folds that reverse cancel).
+        vx = vy = 0.0
+        total = 0.0
+        for raw in (nec_input or "").splitlines():
+            p = raw.split()
+            if len(p) >= 9 and p[0].upper() == "GW":
+                try:
+                    x1, y1, x2, y2 = float(p[3]), float(p[4]), float(p[6]), float(p[7])
+                except (ValueError, IndexError):
+                    continue
+                vx += (x2 - x1); vy += (y2 - y1)
+                total += math.hypot(x2 - x1, y2 - y1)
+
+        net = math.hypot(vx, vy)
+        directionality = max(0.0, min(1.0, net / total)) if total > 0 else 0.0
+        axis_deg = math.degrees(math.atan2(vy, vx)) if net > 1e-9 else 0.0
+        max_gain_dir = (axis_deg + 90.0) % 360.0          # dipole radiates broadside
+
+        angles, gains = [], []
+        floor_lin = 10 ** (-3.0)                           # -30 dB plotting floor
+        for i in range(n_points):
+            phi = 360.0 * i / n_points
+            # figure-8 power ~ sin^2(phi - axis); blended with omni by directionality.
+            fig8 = math.sin(math.radians(phi - axis_deg)) ** 2
+            shape = (1.0 - directionality) + directionality * fig8
+            shape = max(shape, floor_lin)
+            angles.append(round(phi, 1))
+            gains.append(round(peak + 10.0 * math.log10(shape), 2))
+
+        if directionality > 0.25:
+            nulls = [round(axis_deg % 360.0, 1), round((axis_deg + 180.0) % 360.0, 1)]
+            ptype = 'directional (figure-8)' if directionality > 0.6 else 'mildly directional'
+        else:
+            nulls = []
+            ptype = 'near-omnidirectional'
+
+        return {
+            'angles_deg': angles,
+            'gain_dbi': gains,
+            'max_gain_dbi': round(peak, 2),
+            'max_gain_dir_deg': round(max_gain_dir, 1),
+            'null_dirs_deg': nulls,
+            'directionality': round(directionality, 3),
+            'pattern_type': ptype,
+            'axis_deg': round(axis_deg % 360.0, 1),
+            'frequency_mhz': frequency_mhz,
+            'method': 'analytical',
+        }
+
 
 def compute_feed_requirements(resonators: List[Dict]) -> List[Dict]:
     """Advise on feed impedance, matching and balun for each resonator.
@@ -297,6 +364,8 @@ def compute_feed_requirements(resonators: List[Dict]) -> List[Dict]:
         advice.append({
             'label': r.get('label'),
             'freq_mhz': freq,
+            'gain_dbi': est.get('gain_dbi', -50.0),
+            'efficiency_pct': round(est.get('efficiency', 0.0) * 100, 1),
             'feed_impedance_ohms': complex(round(R, 1), round(X, 1)),
             'feed_impedance_str': f"{R:.0f}{'+' if X >= 0 else '-'}j{abs(X):.0f} Ohm",
             'balun_required': balanced,

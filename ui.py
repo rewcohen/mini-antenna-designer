@@ -1346,6 +1346,19 @@ Bandwidth: {summary.get('bandwidth_octaves', 'N/A')} octaves
   Impedance: {freq_data.get('impedance', 'N/A')}
 """
 
+            # Predicted radiation pattern summary.
+            pattern = results.get('radiation_pattern')
+            if pattern and pattern.get('gain_dbi'):
+                display_text += f"""
+
+Predicted Radiation Pattern (azimuth, analytical):
+{'-'*50}
+  Type: {pattern.get('pattern_type','?')}
+  Max gain: {pattern.get('max_gain_dbi',0):.1f} dBi toward {pattern.get('max_gain_dir_deg',0):.0f} deg
+"""
+                if pattern.get('null_dirs_deg'):
+                    display_text += f"  Nulls toward: {', '.join(f'{n:.0f} deg' for n in pattern['null_dirs_deg'])}\n"
+
             # Connection points + feed/balun/impedance advice (per resonator).
             connection_points = results.get('connection_points', [])
             feed_advice = results.get('feed_advice', [])
@@ -1794,6 +1807,8 @@ Warnings:
                 # Per-resonator feed pads + advice so the SVG marks/labels them.
                 'connection_points': self.current_results.get('connection_points', []) if self.current_results else [],
                 'feed_advice': self.current_results.get('feed_advice', []) if self.current_results else [],
+                # Predicted radiation pattern overlay (top-down, labelled).
+                'radiation_pattern': self.current_results.get('radiation_pattern') if self.current_results else None,
             }
 
             output_path = self.exporter.export_geometry(
