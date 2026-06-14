@@ -58,6 +58,12 @@ class PropertiesPanel:
         ttk.Label(self.body, textvariable=self.feed, wraplength=250,
                   justify="left").pack(anchor="w")
 
+        ttk.Label(self.body, text="Recommendations", font=("", 10, "bold")).pack(
+            anchor="w", pady=(PAD_M, PAD_S))
+        self.recommend = StringVar(value="—")
+        ttk.Label(self.body, textvariable=self.recommend, wraplength=250,
+                  justify="left").pack(anchor="w")
+
         session.subscribe(self._refresh)
 
     def _open_analysis(self):
@@ -119,3 +125,40 @@ class PropertiesPanel:
             bal = "balun" if fa.get("balun_required") else "no balun"
             lines.append(f"{fa.get('label', '?')}: {fa.get('feed_impedance_str', '?')} ({bal})")
         self.feed.set("\n".join(lines) if lines else "—")
+
+        self.recommend.set(self._recommendations_text(r))
+
+    @staticmethod
+    def _recommendations_text(r: dict) -> str:
+        """Summarize copper-wire alternatives for bands where the meander is unusable.
+
+        ``feasibility`` is a per-band list (see assess_meander_feasibility); each
+        infeasible band carries a ``reason`` plus an ``alternatives`` list. Anything
+        viable / missing yields a calm default so the panel never dumps raw dicts.
+        """
+        feasibility = r.get("feasibility")
+        if not isinstance(feasibility, list):
+            return "—"
+
+        lines = []
+        for band in feasibility:
+            if not isinstance(band, dict) or band.get("feasible", True):
+                continue
+            label = band.get("label") or "?"
+            freq = band.get("freq_mhz")
+            head = f"{label} {freq:.0f} MHz" if isinstance(freq, (int, float)) else str(label)
+            reason = band.get("reason")
+            lines.append(f"{head}: not viable on this board.")
+            if reason:
+                lines.append(f"  {reason}")
+            alts = band.get("alternatives")
+            if isinstance(alts, list) and alts:
+                lines.append("  Build instead:")
+                for alt in alts:
+                    if not isinstance(alt, dict):
+                        continue
+                    name = alt.get("name") or "alternative"
+                    detail = alt.get("feed_impedance") or alt.get("balun") or alt.get("notes")
+                    lines.append(f"  • {name} ({detail})" if detail else f"  • {name}")
+
+        return "\n".join(lines) if lines else "All bands radiate from the board — no wire build needed."

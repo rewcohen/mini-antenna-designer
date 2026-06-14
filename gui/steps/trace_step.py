@@ -1,7 +1,7 @@
 """Step 3: trace width + advanced meander options."""
 from __future__ import annotations
 
-from tkinter import X, BooleanVar
+from tkinter import X, BooleanVar, StringVar
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import ROUND
 
@@ -24,11 +24,20 @@ class TraceStep:
     def __init__(self, parent, session: DesignSession):
         self.session = session
         self.frame = ttk.Frame(parent)
+        # Guard so slider <-> entry programmatic updates don't ping-pong.
+        self._syncing = False
 
         tw = ttk.LabelFrame(self.frame, text="Trace Width (mil)", padding=PAD_M)
         tw.pack(fill=X, pady=(0, PAD_M))
-        self.trace_label = ttk.Label(tw, text="")
-        self.trace_label.pack(anchor="w")
+        row = ttk.Frame(tw)
+        row.pack(fill=X)
+        self.trace_label = ttk.Label(row, text="")
+        self.trace_label.pack(side="left", anchor="w")
+        self.trace_var = StringVar(value=f"{session.trace_width_mil:.1f}")
+        self.trace_entry = ttk.Entry(row, textvariable=self.trace_var, width=6)
+        self.trace_entry.pack(side="right")
+        self.trace_entry.bind("<Return>", self._on_trace_entry)
+        self.trace_entry.bind("<FocusOut>", self._on_trace_entry)
         self.trace_scale = ttk.Scale(tw, from_=5, to=100, value=session.trace_width_mil,
                                      command=self._on_trace)
         self.trace_scale.pack(fill=X)
@@ -68,7 +77,36 @@ class TraceStep:
         self.session.notify(EVT_INPUTS)
 
     def _on_trace(self, v):
-        self.session.trace_width_mil = round(float(v), 1)
+        mil = round(float(v), 1)
+        self.session.trace_width_mil = mil
+        if not self._syncing:
+            self._syncing = True
+            try:
+                self.trace_var.set(f"{mil:.1f}")
+            finally:
+                self._syncing = False
+        self._update_trace_label()
+        self._update_pad_info()
+        self.session.notify(EVT_INPUTS)
+
+    def _on_trace_entry(self, _event=None):
+        # Ignore programmatic var updates triggered from _on_trace.
+        if self._syncing:
+            return
+        try:
+            mil = round(float(self.trace_var.get()), 1)
+        except (TypeError, ValueError):
+            # Invalid input: revert entry text to the current session value.
+            self.trace_var.set(f"{self.session.trace_width_mil:.1f}")
+            return
+        mil = max(5.0, min(100.0, mil))
+        self.session.trace_width_mil = mil
+        self._syncing = True
+        try:
+            self.trace_scale.set(mil)
+            self.trace_var.set(f"{mil:.1f}")
+        finally:
+            self._syncing = False
         self._update_trace_label()
         self._update_pad_info()
         self.session.notify(EVT_INPUTS)
