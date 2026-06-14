@@ -302,14 +302,22 @@ class AnalysisDialog:
         metrics = results.get("metrics", {}) if isinstance(results, dict) else {}
 
         def vswr_for(f):
-            if not f:
+            # Match numerically: metric keys carry the raw frequency repr
+            # (e.g. "freq_2400.0_mhz", GPS "freq_1575.42_mhz"), so reconstructing
+            # the key from int(round(f)) misses custom/float bands. Mirror the
+            # properties panel: scan the dict and compare the embedded value.
+            if not f or not isinstance(metrics, dict):
                 return 0.0
-            entry = metrics.get(f"freq_{int(round(f))}_mhz", {}) if isinstance(metrics, dict) else {}
-            val = entry.get("vswr") if isinstance(entry, dict) else None
-            try:
-                return float(val)
-            except (TypeError, ValueError):
-                return 0.0
+            for key, entry in metrics.items():
+                if key == "summary" or not isinstance(entry, dict):
+                    continue
+                num = key.replace("freq_", "").replace("_mhz", "")
+                try:
+                    if abs(float(num) - float(f)) <= 0.5:
+                        return float(entry.get("vswr"))
+                except (TypeError, ValueError):
+                    continue
+            return 0.0
 
         v1, v2, v3 = vswr_for(f1), vswr_for(f2), vswr_for(f3)
 
