@@ -1,7 +1,16 @@
 """Desktop user interface for the Mini Antenna Designer."""
 from tkinter import *
-from tkinter import ttk, messagebox, filedialog
+from tkinter import messagebox, filedialog
 from tkinter.scrolledtext import ScrolledText
+import ttkbootstrap as ttk
+from ttkbootstrap import Style
+# ttkbootstrap leaks the tk spellings of these for `LabelFrame`/`PanedWindow`;
+# alias them to the themed ttk widgets the code refers to.
+ttk.PanedWindow = ttk.Panedwindow
+ttk.LabelFrame = ttk.Labelframe
+
+# Consistent spacing scale (px) used across the UI.
+PAD_S, PAD_M, PAD_L = 4, 8, 12
 import threading
 import time
 import random
@@ -31,20 +40,10 @@ from wizard import AntennaWizard
 class AntennaDesignerGUI:
     """Main GUI application for antenna design."""
 
-    # Azure color scheme
-    AZURE_COLORS = {
-        'primary': '#0078D4',          # Main Azure blue
-        'primary_hover': '#106EBE',    # Darker blue for hover
-        'primary_light': '#E1E5ED',    # Very light blue background
-        'success': '#107C10',          # Green for completed steps
-        'current': '#0078D4',          # Current step highlight
-        'upcoming': '#B3B3B3',         # Gray for future steps
-        'border': '#EDEBE9',           # Light borders
-        'background': '#F3F2F1',       # Background gray
-        'background_dark': '#EAEAEA',  # Darker background
-        'text_primary': '#201F1E',     # Dark text
-        'text_secondary': '#605E5C'    # Secondary text
-    }
+    # Theme names (ttkbootstrap). litera = crisp light theme good for tables;
+    # darkly = clean dark theme.
+    LIGHT_THEME = "litera"
+    DARK_THEME = "darkly"
 
     # Workflow steps
     WORKFLOW_STEPS = [
@@ -84,8 +83,14 @@ class AntennaDesignerGUI:
         """Initialize the GUI."""
         self.root = root
         self.root.title("Mini Antenna Designer - Tri-Band Design")
-        self.root.geometry("1200x850")  # Slightly taller for workflow components
+        self.root.geometry("1200x850")
+        self.root.minsize(960, 680)
         self.root.resizable(True, True)
+
+        # Theme engine + state
+        self.style = Style.get_instance() or Style()
+        self.dark_mode = False
+        self._themed_text_widgets = []  # tk ScrolledText/Text re-skinned on theme change
 
         # Initialize backend components
         self.nec = NEC2Interface()
@@ -138,15 +143,18 @@ class AntennaDesignerGUI:
         self.designs_zoom_level = 2.5  # Start at 250% zoom for better visibility
         self.current_design_svg_data = None  # Store current SVG for re-rendering on zoom
 
+        # Status text (created before layout so workflow updates can use it)
+        self.status_var = StringVar(value="Ready")
+
         # Create GUI components
         self._create_menu()
-        self._create_main_layout()
 
-        # Status bar
-        self.status_var = StringVar()
-        self.status_var.set("Ready")
-        status_bar = ttk.Label(root, textvariable=self.status_var, relief=SUNKEN, anchor=W)
+        # Status bar (packed first at bottom so it always stays visible)
+        status_bar = ttk.Label(root, textvariable=self.status_var, relief=SUNKEN,
+                               anchor=W, padding=(PAD_M, PAD_S))
         status_bar.pack(side=BOTTOM, fill=X)
+
+        self._create_main_layout()
 
         # Setup global error handling
         self._setup_global_error_handling()
@@ -163,7 +171,77 @@ class AntennaDesignerGUI:
         except Exception as e:
             logger.error(f"Configuration validation failed: {str(e)}")
 
+        # Skin non-ttk widgets (text panes, canvases, tree stripes) to the theme
+        self._apply_theme_colors()
+
         logger.info("GUI initialized")
+
+    def _toggle_theme(self):
+        """Switch between light and dark themes and re-skin non-ttk widgets."""
+        self.dark_mode = not self.dark_mode
+        self.style.theme_use(self.DARK_THEME if self.dark_mode else self.LIGHT_THEME)
+        self._apply_theme_colors()
+
+    def _register_text(self, widget):
+        """Track a tk Text/ScrolledText so theme changes can re-skin it; returns it.
+
+        Also skins it immediately so widgets created after a theme switch (e.g.
+        in dialogs) match the current theme.
+        """
+        self._themed_text_widgets.append(widget)
+        try:
+            c = self.style.colors
+            widget.configure(background=c.inputbg, foreground=c.inputfg,
+                             insertbackground=c.fg,
+                             selectbackground=c.selectbg, selectforeground=c.selectfg)
+        except Exception:
+            pass
+        return widget
+
+    def _set_status_chip(self, label, text, level):
+        """Set a status-indicator chip's text and color (theme-driven).
+
+        level: 'good' | 'warn' | 'bad' | 'none'.
+        """
+        palette = {'good': 'success', 'warn': 'warning', 'bad': 'danger', 'none': 'secondary'}
+        label.configure(text=text, bootstyle=f"{palette.get(level, 'secondary')} inverse")
+
+    def _apply_theme_colors(self):
+        """Re-skin classic tk widgets (Text, Canvas, Treeview stripes) to the theme.
+
+        ttkbootstrap themes ttk widgets automatically but leaves tk widgets alone.
+        """
+        c = self.style.colors
+        # Subtle alternating row shade derived from the theme background.
+        try:
+            stripe = self.style.colors.make_transparent(0.08, c.fg, c.bg)
+        except Exception:
+            stripe = c.bg
+
+        for w in list(self._themed_text_widgets):
+            try:
+                w.configure(background=c.inputbg, foreground=c.inputfg,
+                            insertbackground=c.fg,
+                            selectbackground=c.selectbg, selectforeground=c.selectfg)
+            except Exception:
+                pass
+
+        for attr in ('thumbnail_canvas', 'chart_canvas', 'thumbnail_label'):
+            w = getattr(self, attr, None)
+            if w is not None:
+                try:
+                    w.configure(background=c.bg)
+                except Exception:
+                    pass
+
+        for attr in ('trace_tree', 'designs_tree'):
+            tree = getattr(self, attr, None)
+            if tree is not None:
+                try:
+                    tree.tag_configure('oddrow', background=c.bg)
+                    tree.tag_configure('evenrow', background=stripe)
+                except Exception:
+                    pass
 
     def _setup_global_error_handling(self):
         """Setup global error handling for Tkinter."""
@@ -207,6 +285,13 @@ class AntennaDesignerGUI:
         tools_menu.add_command(label="View Logs", command=self._show_logs)
         menubar.add_cascade(label="Tools", menu=tools_menu)
 
+        # View menu
+        view_menu = Menu(menubar, tearoff=0)
+        self.dark_mode_var = BooleanVar(value=False)
+        view_menu.add_checkbutton(label="Dark mode", variable=self.dark_mode_var,
+                                  command=self._toggle_theme)
+        menubar.add_cascade(label="View", menu=view_menu)
+
         # Help menu
         help_menu = Menu(menubar, tearoff=0)
         help_menu.add_command(label="About", command=self._show_about)
@@ -245,178 +330,73 @@ class AntennaDesignerGUI:
         """Create all tabs with workflow status indicators."""
         # Design tab
         design_frame = ttk.Frame(self.notebook)
-        self.notebook.add(design_frame, text='⚙️ Design')
+        self.notebook.add(design_frame, text='Design')
         self._create_design_tab(design_frame)
 
         # Results & Analysis tab (combined)
         results_frame = ttk.Frame(self.notebook)
-        self.notebook.add(results_frame, text='📊 Results & Analysis')
+        self.notebook.add(results_frame, text='Results & Analysis')
         self._create_combined_results_tab(results_frame)
 
         # My Designs tab (with export features)
         designs_frame = ttk.Frame(self.notebook)
-        self.notebook.add(designs_frame, text='💾 My Designs')
+        self.notebook.add(designs_frame, text='My Designs')
         self._create_designs_tab(designs_frame)
 
         # Initialize workflow display
         self._update_workflow_display()
 
     def _create_workflow_progress_bar(self):
-        """Create a horizontal perforated progress bar showing workflow completion."""
-        # Main progress container
-        progress_container = ttk.Frame(self.workflow_progress_frame)
-        progress_container.pack(fill='both', expand=True, padx=10, pady=5)
+        """Create the header band: step title, progress bar, and step hint."""
+        container = ttk.Frame(self.workflow_progress_frame, padding=(PAD_L, PAD_S))
+        container.pack(fill='both', expand=True)
 
-        # Workflow status area
-        status_label = ttk.Label(progress_container, text="",
-                               font=('Segoe UI', 11, 'bold'),
-                               foreground=self.AZURE_COLORS['text_primary'])
-        status_label.pack(anchor='w')
-        self.workflow_status_label = status_label
+        # Workflow step title
+        self.workflow_status_label = ttk.Label(
+            container, text="", font=('Segoe UI', 13, 'bold'))
+        self.workflow_status_label.pack(anchor='w')
 
-        # Progress bar frame
-        progress_frame = ttk.Frame(progress_container)
-        progress_frame.pack(fill='x', pady=(5, 0))
+        # Progress row
+        progress_frame = ttk.Frame(container)
+        progress_frame.pack(fill='x', pady=(PAD_S, 0))
 
-        # Apply perforated styling
-        self._apply_progress_bar_styling()
-
-        # Progress bar with Azure colors
         self.workflow_progress_var = DoubleVar(value=0.0)
         self.workflow_progress = ttk.Progressbar(
-            progress_frame,
-            orient='horizontal',
-            mode='determinate',
-            variable=self.workflow_progress_var,
-            maximum=100.0,
-            length=600,  # Fixed width for consistency
-            style='Azure.Horizontal.TProgressbar'
-        )
-        self.workflow_progress.pack(side='left', expand=True)
+            progress_frame, orient='horizontal', mode='determinate',
+            variable=self.workflow_progress_var, maximum=100.0,
+            bootstyle="success-striped")
+        self.workflow_progress.pack(side='left', fill='x', expand=True)
 
-        # Percentage label
         self.progress_percentage_label = ttk.Label(
-            progress_frame,
-            text="0%",
-            font=('Segoe UI', 10, 'bold'),
-            foreground=self.AZURE_COLORS['current']
-        )
-        self.progress_percentage_label.pack(side='left', padx=(10, 0))
+            progress_frame, text="0%", font=('Segoe UI', 10, 'bold'),
+            bootstyle="success", width=12, anchor='w')
+        self.progress_percentage_label.pack(side='left', padx=(PAD_M, 0))
 
-        # Current step indicator label
+        # Current step hint
         self.workflow_step_indicator = ttk.Label(
-            progress_container,
-            text="Design: Configure antenna parameters",
-            font=('Segoe UI', 9),
-            foreground=self.AZURE_COLORS['text_secondary']
-        )
-        self.workflow_step_indicator.pack(anchor='w', pady=(2, 0))
+            container, text="Design: Configure antenna parameters",
+            font=('Segoe UI', 9), bootstyle="secondary")
+        self.workflow_step_indicator.pack(anchor='w', pady=(PAD_S, 0))
 
     def _create_workflow_navigation(self):
-        """Create the bottom navigation buttons with high contrast solid backgrounds."""
+        """Create the bottom Previous/Next navigation buttons."""
         nav_container = ttk.Frame(self.workflow_nav_frame)
-        nav_container.pack(anchor='center', pady=5)
+        nav_container.pack(anchor='center')
 
-        # Previous button - use Label as button for solid background
-        self.prev_button = ttk.Label(nav_container,
-                                    text="◀ Previous",
-                                    font=('Segoe UI', 11, 'bold'),
-                                    background='#FFFFFF',
-                                    foreground='#0078D4',
-                                    anchor='center',
-                                    padding=[10, 5],
-                                    borderwidth=2,
-                                    relief='raised')
-        self.prev_button.pack(side='left', padx=10)
+        self.prev_button = ttk.Button(
+            nav_container, text="◀  Previous", bootstyle="secondary-outline",
+            width=16, command=self._previous_workflow_step)
+        self.prev_button.pack(side='left', padx=PAD_M)
         self.prev_button.config(state='disabled')
-        self.prev_button.bind('<Button-1>', lambda e: self._previous_workflow_step())
-        self.prev_button.bind('<Enter>', lambda e: self.prev_button.config(background='#F0F0F0'))
-        self.prev_button.bind('<Leave>', lambda e: self.prev_button.config(background='#FFFFFF'))
 
-        # Separator
-        separator = ttk.Frame(nav_container, width=20, height=1)
-        separator.pack(side='left')
+        self.next_button = ttk.Button(
+            nav_container, text="Next: Results  ▶", bootstyle="primary",
+            width=18, command=self._next_workflow_step)
+        self.next_button.pack(side='left', padx=PAD_M)
 
-        # Next button - use Label as button for solid background
-        self.next_button = ttk.Label(nav_container,
-                                    text="Next: Results ▶",
-                                    font=('Segoe UI', 11, 'bold'),
-                                    background='#0078D4',
-                                    foreground='#FFFFFF',
-                                    anchor='center',
-                                    padding=[10, 5],
-                                    borderwidth=2,
-                                    relief='raised')
-        self.next_button.pack(side='left', padx=10)
-        self.next_button.bind('<Button-1>', lambda e: self._next_workflow_step())
-        self.next_button.bind('<Enter>', lambda e: self.next_button.config(background='#005A9E'))
-        self.next_button.bind('<Leave>', lambda e: self.next_button.config(background='#0078D4'))
-
-        # Hint label
-        hint_label = ttk.Label(self.workflow_nav_frame,
-                             text="Tip: Click progress dots above to jump between completed steps",
-                             font=('Segoe UI', 8),
-                             foreground=self.AZURE_COLORS['text_secondary'])
-        hint_label.pack(anchor='center', pady=(5, 0))
-
-    def _apply_azure_button_styling(self):
-        """Apply Azure styling to buttons."""
-        style = ttk.Style()
-
-        # Azure primary button style with high contrast
-        style.configure('Azure.TButton',
-                       font=('Segoe UI', 11, 'bold'),
-                       background=self.AZURE_COLORS['primary'],
-                       foreground='white',
-                       padding=[20, 10, 20, 10],
-                       borderwidth=2,
-                       relief='raised')
-
-        style.map('Azure.TButton',
-                 background=[('active', self.AZURE_COLORS['primary_hover']),
-                           ('pressed', '#005A9E')],
-                 foreground=[('active', 'white'),
-                           ('pressed', 'white')])
-
-        # Add themed style for better cross-platform compatibility
-        try:
-            style.element_create('Azure.Button.back',
-                               'from', 'default')
-            style.layout('Azure.TButton',
-                        [('Azure.Button.back', {'sticky': 'ewnc'}),
-                         ('Button.focus', {'children':
-                           [('Button.text', {'sticky': ''})]})])
-        except:
-            # Fallback styling
-            pass
-
-    def _apply_progress_bar_styling(self):
-        """Apply perforated styling to the progress bar."""
-        style = ttk.Style()
-
-        # Create perforated progress bar style with Azure colors
-        style.configure('Azure.Horizontal.TProgressbar',
-                       background=self.AZURE_COLORS['primary'],
-                       troughcolor='#E1E5ED',  # Light background for contrast
-                       borderwidth=1,
-                       lightcolor=self.AZURE_COLORS['border'],
-                       darkcolor=self.AZURE_COLORS['border'])
-
-        # Add segmented appearance to make it look perforated
-        try:
-            # Try to create a custom element for perforated effect
-            style.element_create('AzureProgress.trough', 'from', 'default')
-            style.element_create('AzureProgress.pbar', 'from', 'default')
-
-            style.layout('Azure.Horizontal.TProgressbar',
-                        [('AzureProgress.trough', {'children':
-                          [('AzureProgress.pbar',
-                            {'side': 'left', 'sticky': 'ns'})],
-                          'sticky': 'nswe'})])
-
-        except Exception:
-            # Fallback to basic styling
-            pass
+        ttk.Label(self.workflow_nav_frame,
+                  text="Tip: use Previous / Next to move through the workflow.",
+                  font=('Segoe UI', 8), bootstyle="secondary").pack(anchor='center', pady=(PAD_S, 0))
 
     def _get_workflow_progress_percentage(self):
         """Calculate percentage completion based on current workflow state."""
@@ -632,202 +612,180 @@ class AntennaDesignerGUI:
             logger.error(f"Error updating workflow display: {str(e)}")
 
     def _create_design_tab(self, parent):
-        """Create the antenna design tab."""
-        # Band selection
-        band_frame = ttk.LabelFrame(parent, text="Frequency Band Selection")
-        band_frame.pack(fill='x', padx=5, pady=5)
+        """Create the antenna design tab: inputs on the left, output on the right."""
+        parent.columnconfigure(0, weight=0, minsize=470)
+        parent.columnconfigure(1, weight=1)
+        parent.rowconfigure(0, weight=1)
 
-        ttk.Label(band_frame, text="Predefined Bands:").grid(row=0, column=0, sticky='w', padx=5, pady=2)
+        left = ttk.Frame(parent, padding=(PAD_M, PAD_M, PAD_S, PAD_M))
+        left.grid(row=0, column=0, sticky='nsew')
+        left.columnconfigure(0, weight=1)
+        right = ttk.Frame(parent, padding=(PAD_S, PAD_M, PAD_M, PAD_M))
+        right.grid(row=0, column=1, sticky='nsew')
+        right.columnconfigure(0, weight=1)
+        right.rowconfigure(0, weight=1)
+        right.rowconfigure(1, weight=1)
+
+        def section(title):
+            f = ttk.LabelFrame(left, text=title, padding=PAD_M)
+            f.pack(fill='x', pady=(0, PAD_M))
+            return f
+
+        # --- Frequency Band Selection ---
+        band_frame = section("Frequency Band")
+        band_frame.columnconfigure(1, weight=1)
+        ttk.Label(band_frame, text="Predefined:").grid(row=0, column=0, sticky='w', padx=(0, PAD_S), pady=PAD_S)
         self.band_var = StringVar()
-        self.band_combo = ttk.Combobox(band_frame, textvariable=self.band_var, state='readonly', width=50)
-        self.band_combo.grid(row=0, column=1, padx=5, pady=2)
+        self.band_combo = ttk.Combobox(band_frame, textvariable=self.band_var, state='readonly')
+        self.band_combo.grid(row=0, column=1, sticky='ew', pady=PAD_S)
         self.band_combo.bind('<<ComboboxSelected>>', self._on_band_selected)
         self._populate_band_selection()
+        ttk.Button(band_frame, text="Analyze Band", bootstyle="secondary-outline",
+                   command=self._analyze_selected_band).grid(row=0, column=2, padx=(PAD_S, 0), pady=PAD_S)
 
-        ttk.Button(band_frame, text="Analyze Band", command=self._analyze_selected_band).grid(row=0, column=2, padx=5, pady=2)
-
-        # Custom frequencies
-        custom_frame = ttk.LabelFrame(parent, text="Custom Frequencies (MHz)")
-        custom_frame.pack(fill='x', padx=5, pady=5)
-
-        ttk.Label(custom_frame, text="Band 1:").grid(row=0, column=0, padx=5, pady=2)
+        # --- Custom Frequencies ---
+        custom_frame = section("Custom Frequencies (MHz)")
+        for col in (1, 3, 5):
+            custom_frame.columnconfigure(col, weight=1)
+        ttk.Label(custom_frame, text="Band 1:").grid(row=0, column=0, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         self.freq1_var = StringVar(value="2400")
-        ttk.Entry(custom_frame, textvariable=self.freq1_var, width=10).grid(row=0, column=1, padx=5, pady=2)
-
-        ttk.Label(custom_frame, text="Band 2:").grid(row=0, column=2, padx=5, pady=2)
+        ttk.Entry(custom_frame, textvariable=self.freq1_var, width=8).grid(row=0, column=1, padx=(0, PAD_M), pady=PAD_S, sticky='ew')
+        ttk.Label(custom_frame, text="Band 2:").grid(row=0, column=2, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         self.freq2_var = StringVar(value="5500")
-        ttk.Entry(custom_frame, textvariable=self.freq2_var, width=10).grid(row=0, column=3, padx=5, pady=2)
-
-        ttk.Label(custom_frame, text="Band 3:").grid(row=0, column=4, padx=5, pady=2)
+        ttk.Entry(custom_frame, textvariable=self.freq2_var, width=8).grid(row=0, column=3, padx=(0, PAD_M), pady=PAD_S, sticky='ew')
+        ttk.Label(custom_frame, text="Band 3:").grid(row=0, column=4, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         self.freq3_var = StringVar(value="5800")
-        ttk.Entry(custom_frame, textvariable=self.freq3_var, width=10).grid(row=0, column=5, padx=5, pady=2)
+        ttk.Entry(custom_frame, textvariable=self.freq3_var, width=8).grid(row=0, column=5, padx=(0, PAD_M), pady=PAD_S, sticky='ew')
+        ttk.Button(custom_frame, text="Use Custom", bootstyle="secondary-outline",
+                   command=self._use_custom_frequencies).grid(row=0, column=6, pady=PAD_S)
 
-        ttk.Button(custom_frame, text="Use Custom", command=self._use_custom_frequencies).grid(row=0, column=6, padx=5, pady=2)
+        # --- Substrate Size ---
+        substrate_frame = section("Substrate Size (inches)")
+        substrate_frame.columnconfigure(1, weight=1)
+        substrate_frame.columnconfigure(3, weight=1)
+        ttk.Label(substrate_frame, text="Width:").grid(row=0, column=0, padx=(0, PAD_S), pady=PAD_S, sticky='w')
+        ttk.Entry(substrate_frame, textvariable=self.substrate_width_var, width=8).grid(row=0, column=1, padx=(0, PAD_M), pady=PAD_S, sticky='ew')
+        ttk.Label(substrate_frame, text="Height:").grid(row=0, column=2, padx=(0, PAD_S), pady=PAD_S, sticky='w')
+        ttk.Entry(substrate_frame, textvariable=self.substrate_height_var, width=8).grid(row=0, column=3, padx=(0, PAD_M), pady=PAD_S, sticky='ew')
+        ttk.Button(substrate_frame, text="Update", bootstyle="secondary-outline",
+                   command=self._update_substrate_size).grid(row=0, column=4, pady=PAD_S)
 
-        # Substrate size controls
-        substrate_frame = ttk.LabelFrame(parent, text="Substrate Size (inches)")
-        substrate_frame.pack(fill='x', padx=5, pady=5)
-
-        ttk.Label(substrate_frame, text="Width:").grid(row=0, column=0, padx=5, pady=2)
-        ttk.Entry(substrate_frame, textvariable=self.substrate_width_var, width=10).grid(row=0, column=1, padx=5, pady=2)
-
-        ttk.Label(substrate_frame, text="Height:").grid(row=0, column=2, padx=5, pady=2)
-        ttk.Entry(substrate_frame, textvariable=self.substrate_height_var, width=10).grid(row=0, column=3, padx=5, pady=2)
-
-        ttk.Button(substrate_frame, text="Update Substrate", command=self._update_substrate_size).grid(row=0, column=4, padx=5, pady=2)
-
-        # Trace width controls
-        trace_frame = ttk.LabelFrame(parent, text="Trace Width (mil)")
-        trace_frame.pack(fill='x', padx=5, pady=5)
-
-        ttk.Label(trace_frame, text="Width:").grid(row=0, column=0, padx=5, pady=2)
+        # --- Trace Width ---
+        trace_frame = section("Trace Width (mil)")
+        trace_frame.columnconfigure(1, weight=1)
+        ttk.Label(trace_frame, text="Width:").grid(row=0, column=0, padx=(0, PAD_S), pady=PAD_S)
         self.trace_width_slider = ttk.Scale(trace_frame, from_=5, to=100, orient='horizontal',
                                           variable=self.trace_width_var, command=self._on_trace_width_changed)
-        self.trace_width_slider.grid(row=0, column=1, padx=5, pady=2, sticky='ew')
-
-        self.trace_width_entry = ttk.Entry(trace_frame, textvariable=self.trace_width_var, width=8)
-        self.trace_width_entry.grid(row=0, column=2, padx=5, pady=2)
+        self.trace_width_slider.grid(row=0, column=1, padx=(0, PAD_M), pady=PAD_S, sticky='ew')
+        self.trace_width_entry = ttk.Entry(trace_frame, textvariable=self.trace_width_var, width=6)
+        self.trace_width_entry.grid(row=0, column=2, padx=(0, PAD_M), pady=PAD_S)
         self.trace_width_entry.bind('<FocusOut>', lambda e: self._validate_trace_width())
         self.trace_width_entry.bind('<Return>', lambda e: self._validate_trace_width())
-
         self.trace_width_status_label = ttk.Label(trace_frame, textvariable=self.trace_width_label_var,
-                                                foreground='green')
-        self.trace_width_status_label.grid(row=0, column=3, padx=5, pady=2, sticky='w')
+                                                bootstyle="success")
+        self.trace_width_status_label.grid(row=1, column=0, columnspan=3, pady=(PAD_S, 0), sticky='w')
 
-        # Configure grid weights for trace frame
-        trace_frame.columnconfigure(1, weight=1)
-
-        # Contact pads control
-        contact_frame = ttk.LabelFrame(parent, text="Soldering Options")
-        contact_frame.pack(fill='x', padx=5, pady=5)
-
-        # Contact pads checkbox
+        # --- Soldering Options ---
+        contact_frame = section("Soldering Options")
+        contact_frame.columnconfigure(0, weight=1)
         self.contact_pads_var = BooleanVar(value=False)
-        contact_pad_checkbox = ttk.Checkbutton(
-            contact_frame,
-            text="Add Contact Pads for Soldering",
-            variable=self.contact_pads_var,
-            command=self._on_contact_pads_changed
-        )
-        contact_pad_checkbox.grid(row=0, column=0, padx=5, pady=2, sticky='w')
-
-        # Contact pad info label
+        ttk.Checkbutton(contact_frame, text="Add contact pads for soldering",
+                        variable=self.contact_pads_var, bootstyle="round-toggle",
+                        command=self._on_contact_pads_changed).grid(row=0, column=0, pady=PAD_S, sticky='w')
         self.contact_pad_info_var = StringVar(value="Contact pads: 2× trace width (disabled)")
-        contact_pad_info = ttk.Label(
-            contact_frame,
-            textvariable=self.contact_pad_info_var,
-            font=('Arial', 9, 'italic'),
-            foreground='#666666'
-        )
-        contact_pad_info.grid(row=0, column=1, padx=10, pady=2, sticky='w')
+        ttk.Label(contact_frame, textvariable=self.contact_pad_info_var,
+                  font=('Segoe UI', 9, 'italic'), bootstyle="secondary").grid(row=1, column=0, sticky='w')
 
-        # Configure grid weights
-        contact_frame.columnconfigure(1, weight=1)
-
-        # Advanced Settings (collapsible)
-        self.advanced_settings_frame = ttk.LabelFrame(parent, text="⊕ Advanced Settings (Click to Expand)")
-        self.advanced_settings_frame.pack(fill='x', padx=5, pady=5)
+        # --- Advanced Settings (collapsible) ---
+        self.advanced_settings_frame = ttk.LabelFrame(left, text="▸ Advanced Settings (click to expand)", padding=PAD_M)
+        self.advanced_settings_frame.pack(fill='x', pady=(0, PAD_M))
         self.advanced_settings_frame.bind('<Button-1>', self._toggle_advanced_settings)
 
-        # Create advanced settings content (initially hidden)
         self.advanced_content = ttk.Frame(self.advanced_settings_frame)
         self.advanced_settings_visible = False
+        self.advanced_content.columnconfigure(1, weight=1)
+        self.advanced_content.columnconfigure(4, weight=1)
 
-        # Row 1: Coupling Factor and Bend Radius
-        ttk.Label(self.advanced_content, text="Coupling Factor (0.80-0.98):").grid(row=0, column=0, padx=5, pady=2, sticky='w')
+        ttk.Label(self.advanced_content, text="Coupling (0.80-0.98):").grid(row=0, column=0, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         coupling_scale = ttk.Scale(self.advanced_content, from_=0.80, to=0.98, orient='horizontal',
                                   variable=self.coupling_factor_var, command=self._on_advanced_param_changed)
-        coupling_scale.grid(row=0, column=1, padx=5, pady=2, sticky='ew')
+        coupling_scale.grid(row=0, column=1, padx=(0, PAD_S), pady=PAD_S, sticky='ew')
         self.coupling_value_label = ttk.Label(self.advanced_content, text="0.90")
-        self.coupling_value_label.grid(row=0, column=2, padx=5, pady=2)
+        self.coupling_value_label.grid(row=0, column=2, padx=(0, PAD_M), pady=PAD_S)
 
-        ttk.Label(self.advanced_content, text="Bend Radius (mm):").grid(row=0, column=3, padx=5, pady=2, sticky='w')
+        ttk.Label(self.advanced_content, text="Bend radius (mm):").grid(row=0, column=3, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         bend_scale = ttk.Scale(self.advanced_content, from_=0.5, to=3.0, orient='horizontal',
                              variable=self.bend_radius_var, command=self._on_advanced_param_changed)
-        bend_scale.grid(row=0, column=4, padx=5, pady=2, sticky='ew')
+        bend_scale.grid(row=0, column=4, padx=(0, PAD_S), pady=PAD_S, sticky='ew')
         self.bend_value_label = ttk.Label(self.advanced_content, text="1.0")
-        self.bend_value_label.grid(row=0, column=5, padx=5, pady=2)
+        self.bend_value_label.grid(row=0, column=5, pady=PAD_S)
 
-        # Row 2: Substrate Material Properties
-        ttk.Label(self.advanced_content, text="Substrate εr:").grid(row=1, column=0, padx=5, pady=2, sticky='w')
+        ttk.Label(self.advanced_content, text="Substrate εr:").grid(row=1, column=0, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         substrate_combo = ttk.Combobox(self.advanced_content, values=[
             "4.3 (FR-4)", "2.2 (Rogers RO4003)", "3.5 (Rogers RO4350)", "10.2 (Rogers TMM10)"
         ], state='readonly', width=20)
         substrate_combo.set("4.3 (FR-4)")
-        substrate_combo.grid(row=1, column=1, padx=5, pady=2, sticky='ew')
+        substrate_combo.grid(row=1, column=1, padx=(0, PAD_S), pady=PAD_S, sticky='ew')
         substrate_combo.bind('<<ComboboxSelected>>', self._on_substrate_material_changed)
 
-        ttk.Label(self.advanced_content, text="Thickness (mm):").grid(row=1, column=3, padx=5, pady=2, sticky='w')
+        ttk.Label(self.advanced_content, text="Thickness (mm):").grid(row=1, column=3, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         thickness_entry = ttk.Entry(self.advanced_content, textvariable=self.substrate_thickness_var, width=8)
-        thickness_entry.grid(row=1, column=4, padx=5, pady=2)
+        thickness_entry.grid(row=1, column=4, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         thickness_entry.bind('<FocusOut>', lambda e: self._on_advanced_param_changed())
 
-        # Row 3: Meander Density
-        ttk.Label(self.advanced_content, text="Meander Density:").grid(row=2, column=0, padx=5, pady=2, sticky='w')
+        ttk.Label(self.advanced_content, text="Meander density:").grid(row=2, column=0, padx=(0, PAD_S), pady=PAD_S, sticky='w')
         density_scale = ttk.Scale(self.advanced_content, from_=0.5, to=2.0, orient='horizontal',
                                 variable=self.meander_density_var, command=self._on_advanced_param_changed)
-        density_scale.grid(row=2, column=1, padx=5, pady=2, sticky='ew')
+        density_scale.grid(row=2, column=1, padx=(0, PAD_S), pady=PAD_S, sticky='ew')
         self.density_value_label = ttk.Label(self.advanced_content, text="1.0 (Normal)")
-        self.density_value_label.grid(row=2, column=2, padx=5, pady=2)
-        ttk.Label(self.advanced_content, text="← Sparse    Dense →", font=('Arial', 8, 'italic')).grid(row=2, column=3, columnspan=2, padx=5, pady=2, sticky='w')
+        self.density_value_label.grid(row=2, column=2, pady=PAD_S)
+        ttk.Label(self.advanced_content, text="← Sparse    Dense →", font=('Segoe UI', 8, 'italic'),
+                  bootstyle="secondary").grid(row=2, column=3, columnspan=2, padx=(0, PAD_S), pady=PAD_S, sticky='w')
 
-        # Configure grid weights for advanced settings
-        self.advanced_content.columnconfigure(1, weight=1)
-        self.advanced_content.columnconfigure(4, weight=1)
-
-        # Design Preview Panel
-        preview_frame = ttk.LabelFrame(parent, text="📊 Design Preview (Estimated Trace Lengths)")
-        preview_frame.pack(fill='x', padx=5, pady=5)
-
-        # Create a grid layout for preview information
+        # --- Design Preview (estimated) ---
+        preview_frame = section("Design Preview (estimated)")
         preview_grid = ttk.Frame(preview_frame)
-        preview_grid.pack(fill='x', padx=10, pady=5)
+        preview_grid.pack(fill='x')
+        preview_grid.columnconfigure(1, weight=1)
+        preview_grid.columnconfigure(3, weight=1)
+        ttk.Label(preview_grid, text="Total length:", font=('Segoe UI', 9, 'bold')).grid(row=0, column=0, padx=(0, PAD_S), pady=PAD_S, sticky='w')
+        ttk.Label(preview_grid, textvariable=self.preview_total_length_var, font=('Segoe UI', 11, 'bold'), bootstyle="info").grid(row=0, column=1, pady=PAD_S, sticky='w')
+        ttk.Label(preview_grid, text="Segments:", font=('Segoe UI', 9, 'bold')).grid(row=0, column=2, padx=(PAD_M, PAD_S), pady=PAD_S, sticky='w')
+        ttk.Label(preview_grid, textvariable=self.preview_segment_count_var, font=('Segoe UI', 11, 'bold'), bootstyle="success").grid(row=0, column=3, pady=PAD_S, sticky='w')
+        ttk.Label(preview_grid, text="Target length:", font=('Segoe UI', 9)).grid(row=1, column=0, padx=(0, PAD_S), pady=PAD_S, sticky='w')
+        ttk.Label(preview_grid, textvariable=self.preview_target_length_var, font=('Segoe UI', 10)).grid(row=1, column=1, pady=PAD_S, sticky='w')
+        ttk.Label(preview_grid, text="Length error:", font=('Segoe UI', 9)).grid(row=1, column=2, padx=(PAD_M, PAD_S), pady=PAD_S, sticky='w')
+        self.preview_error_label = ttk.Label(preview_grid, textvariable=self.preview_length_error_var, font=('Segoe UI', 10))
+        self.preview_error_label.grid(row=1, column=3, pady=PAD_S, sticky='w')
+        ttk.Button(preview_frame, text="Calculate Preview", bootstyle="info-outline",
+                   command=self._update_design_preview).pack(pady=(PAD_M, PAD_S), anchor='w')
+        ttk.Label(preview_frame, text="Estimated from current settings. Generate design for exact values.",
+                  font=('Segoe UI', 8, 'italic'), bootstyle="secondary", wraplength=420, justify='left').pack(anchor='w')
 
-        # Column 1: Total Length
-        ttk.Label(preview_grid, text="Total Trace Length:", font=('Arial', 9, 'bold')).grid(row=0, column=0, padx=5, pady=2, sticky='w')
-        ttk.Label(preview_grid, textvariable=self.preview_total_length_var, font=('Arial', 11, 'bold'), foreground='blue').grid(row=0, column=1, padx=5, pady=2, sticky='w')
-
-        # Column 2: Segment Count
-        ttk.Label(preview_grid, text="Estimated Segments:", font=('Arial', 9, 'bold')).grid(row=0, column=2, padx=15, pady=2, sticky='w')
-        ttk.Label(preview_grid, textvariable=self.preview_segment_count_var, font=('Arial', 11, 'bold'), foreground='green').grid(row=0, column=3, padx=5, pady=2, sticky='w')
-
-        # Row 2: Target vs Actual
-        ttk.Label(preview_grid, text="Target Length:", font=('Arial', 9)).grid(row=1, column=0, padx=5, pady=2, sticky='w')
-        ttk.Label(preview_grid, textvariable=self.preview_target_length_var, font=('Arial', 10)).grid(row=1, column=1, padx=5, pady=2, sticky='w')
-
-        ttk.Label(preview_grid, text="Length Error:", font=('Arial', 9)).grid(row=1, column=2, padx=15, pady=2, sticky='w')
-        self.preview_error_label = ttk.Label(preview_grid, textvariable=self.preview_length_error_var, font=('Arial', 10))
-        self.preview_error_label.grid(row=1, column=3, padx=5, pady=2, sticky='w')
-
-        # Update button
-        ttk.Button(preview_frame, text="🔄 Calculate Preview", command=self._update_design_preview).pack(pady=5)
-
-        preview_note = ttk.Label(preview_frame, text="Note: Preview calculates estimated trace lengths based on current settings. Generate design for exact values.",
-                               font=('Arial', 8, 'italic'), foreground='gray')
-        preview_note.pack(pady=2)
-
-        # Design generation controls
-        opt_frame = ttk.LabelFrame(parent, text="Antenna Design Generation")
-        opt_frame.pack(fill='x', padx=5, pady=5)
-
-        self.progress_var = DoubleVar()
-        self.progress_bar = ttk.Progressbar(opt_frame, variable=self.progress_var, maximum=100)
-        self.progress_bar.grid(row=0, column=0, padx=5, pady=2, sticky='ew')
-
-        self.optimize_button = ttk.Button(opt_frame, text="Generate Design", command=self._generate_design)
-        self.optimize_button.grid(row=0, column=1, padx=5, pady=2)
-
-        ttk.Button(opt_frame, text="Stop", command=self._stop_optimization).grid(row=0, column=2, padx=5, pady=2)
-
-        # Messages area
-        msg_frame = ttk.LabelFrame(parent, text="Messages")
-        msg_frame.pack(fill='both', expand=True, padx=5, pady=5)
-
-        self.message_text = ScrolledText(msg_frame, height=10, wrap=WORD)
-        self.message_text.pack(fill='both', expand=True, padx=5, pady=5)
-
-        # Configure grid weights
+        # --- Generate ---
+        opt_frame = section("Generate Antenna Design")
         opt_frame.columnconfigure(0, weight=1)
+        self.progress_var = DoubleVar()
+        self.progress_bar = ttk.Progressbar(opt_frame, variable=self.progress_var, maximum=100, bootstyle="success-striped")
+        self.progress_bar.grid(row=0, column=0, columnspan=2, padx=(0, 0), pady=(0, PAD_M), sticky='ew')
+        self.optimize_button = ttk.Button(opt_frame, text="Generate Design", bootstyle="primary",
+                                           command=self._generate_design)
+        self.optimize_button.grid(row=1, column=0, padx=(0, PAD_S), pady=0, sticky='ew')
+        ttk.Button(opt_frame, text="Stop", bootstyle="secondary",
+                   command=self._stop_optimization).grid(row=1, column=1, pady=0)
+
+        # --- Right column: Messages + Geometry output ---
+        msg_frame = ttk.LabelFrame(right, text="Messages", padding=PAD_S)
+        msg_frame.grid(row=0, column=0, sticky='nsew', pady=(0, PAD_M))
+        self.message_text = self._register_text(ScrolledText(msg_frame, height=8, wrap=WORD,
+                                                             relief='flat', borderwidth=0))
+        self.message_text.pack(fill='both', expand=True)
+
+        geo_frame = ttk.LabelFrame(right, text="Geometry Preview", padding=PAD_S)
+        geo_frame.grid(row=1, column=0, sticky='nsew')
+        self.preview_text = self._register_text(ScrolledText(geo_frame, height=8, wrap=NONE,
+                                                            font=('Consolas', 9), relief='flat', borderwidth=0))
+        self.preview_text.pack(fill='both', expand=True)
 
     def _create_combined_results_tab(self, parent):
         """Create combined Results & Analysis tab with trace data and ASCII band analysis."""
@@ -848,61 +806,65 @@ class AntennaDesignerGUI:
     def _create_results_section(self, parent):
         """Create the results section with detailed trace length information."""
         # Top section: Summary information
-        summary_frame = ttk.LabelFrame(parent, text="Design Summary")
-        summary_frame.pack(fill='x', padx=5, pady=5)
+        summary_frame = ttk.LabelFrame(parent, text="Design Summary", padding=PAD_S)
+        summary_frame.pack(fill='x', padx=PAD_M, pady=(PAD_M, PAD_S))
 
-        self.results_text = ScrolledText(summary_frame, height=8, wrap=WORD)
-        self.results_text.pack(fill='both', expand=True, padx=5, pady=5)
+        self.results_text = self._register_text(
+            ScrolledText(summary_frame, height=8, wrap=WORD, relief='flat', borderwidth=0))
+        self.results_text.pack(fill='both', expand=True)
 
         # Performance metrics
-        perf_frame = ttk.LabelFrame(parent, text="Performance Metrics")
-        perf_frame.pack(fill='x', padx=5, pady=5)
+        perf_frame = ttk.LabelFrame(parent, text="Performance Metrics", padding=PAD_M)
+        perf_frame.pack(fill='x', padx=PAD_M, pady=PAD_S)
 
-        # Status indicators
+        # Status indicators (colored chips, theme-driven via _set_status_chip)
         self.status_indicators = {}
         metrics = ['VSWR Band 1', 'VSWR Band 2', 'VSWR Band 3', 'Fitness Score', 'Status']
 
         for i, metric in enumerate(metrics):
-            ttk.Label(perf_frame, text=f"{metric}:").grid(row=0, column=i*2, padx=5, pady=2, sticky='w')
-            indicator = ttk.Label(perf_frame, text="--", background='gray', width=10)
-            indicator.grid(row=0, column=i*2+1, padx=5, pady=2)
+            ttk.Label(perf_frame, text=f"{metric}:").grid(row=0, column=i*2, padx=(0, PAD_S), pady=PAD_S, sticky='w')
+            indicator = ttk.Label(perf_frame, text="--", bootstyle="secondary inverse",
+                                   anchor='center', width=10)
+            indicator.grid(row=0, column=i*2+1, padx=(0, PAD_M), pady=PAD_S)
             self.status_indicators[metric] = indicator
 
         # Detailed Trace Length Information
-        trace_frame = ttk.LabelFrame(parent, text="📏 Detailed Trace Lengths (Actual Line Lengths)")
-        trace_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        trace_frame = ttk.LabelFrame(parent, text="Detailed Trace Lengths", padding=PAD_M)
+        trace_frame.pack(fill='both', expand=True, padx=PAD_M, pady=PAD_S)
 
         # Controls
         control_bar = ttk.Frame(trace_frame)
-        control_bar.pack(fill='x', padx=5, pady=2)
+        control_bar.pack(fill='x', pady=(0, PAD_S))
 
-        ttk.Button(control_bar, text="Export Trace Data (CSV)", command=self._export_trace_data_csv).pack(side=LEFT, padx=2)
-        ttk.Button(control_bar, text="Copy to Clipboard", command=self._copy_trace_data).pack(side=LEFT, padx=2)
+        ttk.Button(control_bar, text="Export CSV", bootstyle="secondary-outline",
+                   command=self._export_trace_data_csv).pack(side=LEFT, padx=(0, PAD_S))
+        ttk.Button(control_bar, text="Copy to Clipboard", bootstyle="secondary-outline",
+                   command=self._copy_trace_data).pack(side=LEFT)
 
         # Summary stats
         stats_frame = ttk.Frame(trace_frame)
-        stats_frame.pack(fill='x', padx=5, pady=2)
+        stats_frame.pack(fill='x', pady=(0, PAD_S))
 
         self.trace_total_length_var = StringVar(value="--")
         self.trace_count_var = StringVar(value="--")
         self.trace_avg_length_var = StringVar(value="--")
         self.trace_longest_var = StringVar(value="--")
 
-        ttk.Label(stats_frame, text="Total Length:").grid(row=0, column=0, padx=5, sticky='w')
-        ttk.Label(stats_frame, textvariable=self.trace_total_length_var, font=('Arial', 10, 'bold'), foreground='blue').grid(row=0, column=1, padx=5, sticky='w')
+        ttk.Label(stats_frame, text="Total Length:").grid(row=0, column=0, padx=(0, PAD_S), sticky='w')
+        ttk.Label(stats_frame, textvariable=self.trace_total_length_var, font=('Segoe UI', 10, 'bold'), bootstyle="info").grid(row=0, column=1, padx=(0, PAD_M), sticky='w')
 
-        ttk.Label(stats_frame, text="Trace Count:").grid(row=0, column=2, padx=10, sticky='w')
-        ttk.Label(stats_frame, textvariable=self.trace_count_var, font=('Arial', 10, 'bold'), foreground='green').grid(row=0, column=3, padx=5, sticky='w')
+        ttk.Label(stats_frame, text="Trace Count:").grid(row=0, column=2, padx=(0, PAD_S), sticky='w')
+        ttk.Label(stats_frame, textvariable=self.trace_count_var, font=('Segoe UI', 10, 'bold'), bootstyle="success").grid(row=0, column=3, padx=(0, PAD_M), sticky='w')
 
-        ttk.Label(stats_frame, text="Average Length:").grid(row=0, column=4, padx=10, sticky='w')
-        ttk.Label(stats_frame, textvariable=self.trace_avg_length_var, font=('Arial', 10, 'bold')).grid(row=0, column=5, padx=5, sticky='w')
+        ttk.Label(stats_frame, text="Average Length:").grid(row=0, column=4, padx=(0, PAD_S), sticky='w')
+        ttk.Label(stats_frame, textvariable=self.trace_avg_length_var, font=('Segoe UI', 10, 'bold')).grid(row=0, column=5, padx=(0, PAD_M), sticky='w')
 
-        ttk.Label(stats_frame, text="Longest Segment:").grid(row=0, column=6, padx=10, sticky='w')
-        ttk.Label(stats_frame, textvariable=self.trace_longest_var, font=('Arial', 10, 'bold')).grid(row=0, column=7, padx=5, sticky='w')
+        ttk.Label(stats_frame, text="Longest Segment:").grid(row=0, column=6, padx=(0, PAD_S), sticky='w')
+        ttk.Label(stats_frame, textvariable=self.trace_longest_var, font=('Segoe UI', 10, 'bold')).grid(row=0, column=7, sticky='w')
 
         # Create treeview for trace data with scrollbars
         tree_container = ttk.Frame(trace_frame)
-        tree_container.pack(fill='both', expand=True, padx=5, pady=5)
+        tree_container.pack(fill='both', expand=True, pady=(PAD_S, 0))
 
         # Scrollbars
         trace_scroll_y = ttk.Scrollbar(tree_container, orient='vertical')
@@ -928,7 +890,7 @@ class AntennaDesignerGUI:
         self.trace_tree.heading('Start Y (in)', text='Start Y (in)')
         self.trace_tree.heading('End X (in)', text='End X (in)')
         self.trace_tree.heading('End Y (in)', text='End Y (in)')
-        self.trace_tree.heading('Length (mm)', text='Length (mm) ⭐')
+        self.trace_tree.heading('Length (mm)', text='Length (mm)')
         self.trace_tree.heading('Length (in)', text='Length (in)')
         self.trace_tree.heading('Width (mil)', text='Width (mil)')
         self.trace_tree.heading('Cumulative (mm)', text='Cumulative (mm)')
@@ -945,26 +907,28 @@ class AntennaDesignerGUI:
 
         self.trace_tree.pack(fill='both', expand=True)
 
-        # Add tags for alternating row colors
-        self.trace_tree.tag_configure('oddrow', background='white')
-        self.trace_tree.tag_configure('evenrow', background='#f0f0f0')
+        # Alternating row colors are applied from the theme in _apply_theme_colors().
 
     def _create_analysis_section(self, parent):
         """Create ASCII-based band analysis section."""
         # Band analysis display area
-        analysis_frame = ttk.LabelFrame(parent, text="📡 Band Analysis (ASCII Charts)")
-        analysis_frame.pack(fill='both', expand=True, padx=5, pady=5)
+        analysis_frame = ttk.LabelFrame(parent, text="Band Analysis (ASCII Charts)", padding=PAD_M)
+        analysis_frame.pack(fill='both', expand=True, padx=PAD_M, pady=PAD_M)
 
         # Controls
         control_bar = ttk.Frame(analysis_frame)
-        control_bar.pack(fill='x', padx=5, pady=5)
+        control_bar.pack(fill='x', pady=(0, PAD_S))
 
-        ttk.Button(control_bar, text="Generate ASCII Analysis", command=self._generate_ascii_band_analysis).pack(side=LEFT, padx=5)
-        ttk.Button(control_bar, text="Export Analysis (TXT)", command=self._export_ascii_analysis).pack(side=LEFT, padx=5)
+        ttk.Button(control_bar, text="Generate Analysis", bootstyle="primary",
+                   command=self._generate_ascii_band_analysis).pack(side=LEFT, padx=(0, PAD_S))
+        ttk.Button(control_bar, text="Export TXT", bootstyle="secondary-outline",
+                   command=self._export_ascii_analysis).pack(side=LEFT)
 
         # ASCII chart display
-        self.ascii_analysis_text = ScrolledText(analysis_frame, height=30, wrap=NONE, font=('Courier', 9))
-        self.ascii_analysis_text.pack(fill='both', expand=True, padx=5, pady=5)
+        self.ascii_analysis_text = self._register_text(
+            ScrolledText(analysis_frame, height=30, wrap=NONE, font=('Consolas', 9),
+                         relief='flat', borderwidth=0))
+        self.ascii_analysis_text.pack(fill='both', expand=True, pady=(PAD_S, 0))
 
         # Add initial placeholder text
         placeholder = """
@@ -1428,12 +1392,10 @@ Warnings:
         """Update the performance indicator lights for design results."""
         try:
             # Update status
-            status_indicator = self.status_indicators['Status']
-            status_indicator.config(text="Complete", background='green')
+            self._set_status_chip(self.status_indicators['Status'], "Complete", 'good')
 
             # Update fitness score indicator (not applicable for design generator)
-            fitness_indicator = self.status_indicators['Fitness Score']
-            fitness_indicator.config(text="N/A", background='gray')
+            self._set_status_chip(self.status_indicators['Fitness Score'], "N/A", 'none')
 
             # Get VSWR values from metrics if available
             metrics = results.get('metrics', {})
@@ -1455,11 +1417,11 @@ Warnings:
                 indicator = self.status_indicators[f'VSWR Band {i+1}']
 
                 if vswr < 2.0:
-                    indicator.config(text=f"{vswr:.1f}", background='green')
+                    self._set_status_chip(indicator, f"{vswr:.1f}", 'good')
                 elif vswr < 3.0:
-                    indicator.config(text=f"{vswr:.1f}", background='yellow')
+                    self._set_status_chip(indicator, f"{vswr:.1f}", 'warn')
                 else:
-                    indicator.config(text=f"{vswr:.1f}", background='red')
+                    self._set_status_chip(indicator, f"{vswr:.1f}", 'bad')
 
         except Exception as e:
             logger.warning(f"Error updating design status indicators: {str(e)}")
@@ -1622,7 +1584,7 @@ Warnings:
             logger.error(f"Clipboard copy error: {str(e)}")
 
     def _show_geometry_preview(self):
-        """Show geometry preview in export tab."""
+        """Show geometry preview in the Design tab's Geometry Preview pane."""
         try:
             if self.current_geometry:
                 self.preview_text.delete(1.0, END)
@@ -1662,7 +1624,7 @@ Warnings:
         mode_cb = ttk.Combobox(top, textvariable=mode_var, values=mode_labels, state='readonly', width=40)
         mode_cb.grid(row=1, column=1, sticky='w', padx=6, pady=3)
 
-        info = ttk.Label(top, text="", foreground="#555", wraplength=720, justify='left')
+        info = ttk.Label(top, text="", bootstyle="secondary", wraplength=720, justify='left')
         info.grid(row=2, column=0, columnspan=2, sticky='w', pady=(4, 0))
 
         mid = ttk.Frame(win, padding=(10, 0))
@@ -1671,7 +1633,7 @@ Warnings:
         options_list = Listbox(mid, height=7)
         options_list.pack(fill='x', pady=3)
 
-        spec_text = ScrolledText(mid, height=16, wrap=WORD)
+        spec_text = self._register_text(ScrolledText(mid, height=16, wrap=WORD))
         spec_text.pack(fill='both', expand=True, pady=3)
 
         state = {'ctx': None}
@@ -1782,7 +1744,7 @@ Warnings:
         ttk.Combobox(form, textvariable=mode_var, values=['tx', 'rx', 'both'],
                      state='readonly', width=26).grid(row=len(rows), column=1, sticky='w', padx=6)
 
-        out = ScrolledText(win, height=24, wrap=WORD)
+        out = self._register_text(ScrolledText(win, height=24, wrap=WORD))
         out.pack(fill='both', expand=True, padx=10, pady=6)
         state = {}
 
@@ -1960,7 +1922,7 @@ Warnings:
 
         # Reset status indicators
         for indicator in self.status_indicators.values():
-            indicator.config(text="--", background='gray')
+            self._set_status_chip(indicator, "--", 'none')
 
         self.status_var.set("Ready")
 
@@ -2074,7 +2036,7 @@ Band Details:
                 log_window.title("Application Logs")
                 log_window.geometry("800x600")
 
-                log_text = ScrolledText(log_window, wrap=WORD, font=('Courier', 9))
+                log_text = self._register_text(ScrolledText(log_window, wrap=WORD, font=('Consolas', 9)))
                 log_text.pack(fill='both', expand=True, padx=5, pady=5)
 
                 with open(log_file, 'r') as f:
@@ -2195,12 +2157,12 @@ Supported Antenna Types:
             if self.advanced_settings_visible:
                 # Hide advanced settings
                 self.advanced_content.pack_forget()
-                self.advanced_settings_frame.config(text="⊕ Advanced Settings (Click to Expand)")
+                self.advanced_settings_frame.config(text="▸ Advanced Settings (click to expand)")
                 self.advanced_settings_visible = False
             else:
                 # Show advanced settings
-                self.advanced_content.pack(fill='x', padx=5, pady=5)
-                self.advanced_settings_frame.config(text="⊖ Advanced Settings (Click to Collapse)")
+                self.advanced_content.pack(fill='x', pady=(PAD_S, 0))
+                self.advanced_settings_frame.config(text="▾ Advanced Settings (click to collapse)")
                 self.advanced_settings_visible = True
         except Exception as e:
             logger.error(f"Error toggling advanced settings: {str(e)}")
@@ -2319,35 +2281,35 @@ Supported Antenna Types:
         # self.design_storage is already created in __init__
 
         # Top toolbar
-        toolbar_frame = ttk.Frame(parent)
-        toolbar_frame.pack(fill='x', padx=5, pady=5)
+        toolbar_frame = ttk.Frame(parent, padding=(PAD_M, PAD_M, PAD_M, PAD_S))
+        toolbar_frame.pack(fill='x')
 
         # Save current design button
-        ttk.Button(toolbar_frame, text="Save Current Design",
-                  command=self._save_current_design).pack(side=LEFT, padx=2)
+        ttk.Button(toolbar_frame, text="Save Current Design", bootstyle="primary",
+                  command=self._save_current_design).pack(side=LEFT, padx=(0, PAD_S))
 
         # Refresh button
-        ttk.Button(toolbar_frame, text="Refresh List",
-                  command=self._refresh_designs_list).pack(side=LEFT, padx=2)
+        ttk.Button(toolbar_frame, text="Refresh List", bootstyle="secondary-outline",
+                  command=self._refresh_designs_list).pack(side=LEFT, padx=(0, PAD_S))
 
         # Delete button
-        ttk.Button(toolbar_frame, text="Delete Selected",
-                  command=self._delete_selected_design).pack(side=LEFT, padx=2)
+        ttk.Button(toolbar_frame, text="Delete Selected", bootstyle="danger-outline",
+                  command=self._delete_selected_design).pack(side=LEFT, padx=(0, PAD_S))
 
         # Search entry
         search_frame = ttk.Frame(toolbar_frame)
-        search_frame.pack(side=RIGHT, padx=2)
-        ttk.Label(search_frame, text="Search:").pack(side=LEFT)
+        search_frame.pack(side=RIGHT)
+        ttk.Label(search_frame, text="Search:").pack(side=LEFT, padx=(0, PAD_S))
         self.design_search_var = StringVar()
         search_entry = ttk.Entry(search_frame, textvariable=self.design_search_var, width=20)
-        search_entry.pack(side=LEFT, padx=2)
+        search_entry.pack(side=LEFT)
         search_entry.bind('<KeyRelease>', lambda e: self._search_designs())
 
         # Main content area - use simple frames with fallback if paned window fails
         try:
             # Try to use paned window for resizable split
             paned = ttk.PanedWindow(parent, orient='horizontal')
-            paned.pack(fill='both', expand=True, padx=5, pady=5)
+            paned.pack(fill='both', expand=True, padx=PAD_M, pady=(0, PAD_M))
             logger.info("Successfully created paned window for designs tab")
 
             # Left panel - designs list
@@ -2405,32 +2367,34 @@ Supported Antenna Types:
         self.designs_tree.bind('<<TreeviewSelect>>', self._on_design_selected)
 
         # Design details
-        details_frame = ttk.LabelFrame(right_panel, text="Design Details")
-        details_frame.pack(fill='x', pady=(0, 5))
+        details_frame = ttk.LabelFrame(right_panel, text="Design Details", padding=PAD_S)
+        details_frame.pack(fill='x', pady=(0, PAD_M), padx=(PAD_M, 0))
 
-        self.details_text = ScrolledText(details_frame, height=8, wrap=WORD, font=('Courier', 9))
-        self.details_text.pack(fill='both', expand=True, padx=5, pady=5)
+        self.details_text = self._register_text(
+            ScrolledText(details_frame, height=8, wrap=WORD, font=('Consolas', 9),
+                         relief='flat', borderwidth=0))
+        self.details_text.pack(fill='both', expand=True)
 
         # Preview area
-        preview_frame = ttk.LabelFrame(right_panel, text="Preview")
-        preview_frame.pack(fill='both', expand=True)
+        preview_frame = ttk.LabelFrame(right_panel, text="Preview", padding=PAD_S)
+        preview_frame.pack(fill='both', expand=True, padx=(PAD_M, 0))
 
         # Zoom controls for preview
         zoom_controls_frame = ttk.Frame(preview_frame)
-        zoom_controls_frame.pack(fill='x', padx=5, pady=2)
+        zoom_controls_frame.pack(fill='x', pady=(0, PAD_S))
 
-        ttk.Button(zoom_controls_frame, text="Zoom In +", command=self._designs_zoom_in).pack(side=LEFT, padx=2)
-        ttk.Button(zoom_controls_frame, text="Zoom Out -", command=self._designs_zoom_out).pack(side=LEFT, padx=2)
-        ttk.Button(zoom_controls_frame, text="Fit to View", command=self._designs_fit_to_view).pack(side=LEFT, padx=2)
+        ttk.Button(zoom_controls_frame, text="Zoom In", bootstyle="secondary-outline", command=self._designs_zoom_in).pack(side=LEFT, padx=(0, PAD_S))
+        ttk.Button(zoom_controls_frame, text="Zoom Out", bootstyle="secondary-outline", command=self._designs_zoom_out).pack(side=LEFT, padx=(0, PAD_S))
+        ttk.Button(zoom_controls_frame, text="Fit to View", bootstyle="secondary-outline", command=self._designs_fit_to_view).pack(side=LEFT)
 
         # Zoom level display
         self.zoom_level_label = ttk.Label(zoom_controls_frame, text=f"Zoom: {int(self.designs_zoom_level * 100)}%",
-                                         font=('Arial', 9, 'bold'), foreground='blue')
-        self.zoom_level_label.pack(side=LEFT, padx=10)
+                                         font=('Segoe UI', 9, 'bold'), bootstyle="info")
+        self.zoom_level_label.pack(side=LEFT, padx=PAD_M)
 
         # Scrollable thumbnail preview container
         preview_container = ttk.Frame(preview_frame)
-        preview_container.pack(fill='both', expand=True, padx=5, pady=5)
+        preview_container.pack(fill='both', expand=True, pady=PAD_S)
 
         # Add scrollbars
         preview_scroll_y = ttk.Scrollbar(preview_container, orient='vertical')
@@ -2457,18 +2421,18 @@ Supported Antenna Types:
         action_frame = ttk.Frame(preview_frame)
         action_frame.pack(fill='x', pady=(5, 0))
 
-        ttk.Button(action_frame, text="Load Design", command=self._load_selected_design).pack(side=LEFT, padx=2)
-        ttk.Button(action_frame, text="Edit Notes", command=self._edit_design_notes).pack(side=RIGHT, padx=2)
+        ttk.Button(action_frame, text="Load Design", bootstyle="primary", command=self._load_selected_design).pack(side=LEFT)
+        ttk.Button(action_frame, text="Edit Notes", bootstyle="secondary-outline", command=self._edit_design_notes).pack(side=RIGHT)
 
         # Export options frame
-        export_options_frame = ttk.LabelFrame(right_panel, text="📦 Export Options")
-        export_options_frame.pack(fill='x', pady=(5, 0))
+        export_options_frame = ttk.LabelFrame(right_panel, text="Export Options", padding=PAD_S)
+        export_options_frame.pack(fill='x', pady=(PAD_M, 0), padx=(PAD_M, 0))
 
         # Filename entry
         filename_frame = ttk.Frame(export_options_frame)
-        filename_frame.pack(fill='x', padx=5, pady=5)
+        filename_frame.pack(fill='x', pady=(0, PAD_S))
 
-        ttk.Label(filename_frame, text="Filename:").pack(side=LEFT, padx=(0, 5))
+        ttk.Label(filename_frame, text="Filename:").pack(side=LEFT, padx=(0, PAD_S))
 
         # Generate automatic filename with today's date and random suffix
         from datetime import datetime
@@ -2480,28 +2444,27 @@ Supported Antenna Types:
 
         # Export format buttons
         export_buttons_frame = ttk.Frame(export_options_frame)
-        export_buttons_frame.pack(fill='x', padx=5, pady=5)
+        export_buttons_frame.pack(fill='x')
 
-        ttk.Button(export_buttons_frame, text="Export SVG",
-                  command=lambda: self._export_geometry('svg')).pack(side=LEFT, padx=2)
-        ttk.Button(export_buttons_frame, text="Export DXF",
-                  command=lambda: self._export_geometry('dxf')).pack(side=LEFT, padx=2)
-        ttk.Button(export_buttons_frame, text="Export PDF",
-                  command=lambda: self._export_geometry('pdf')).pack(side=LEFT, padx=2)
+        ttk.Button(export_buttons_frame, text="SVG", bootstyle="secondary-outline",
+                  command=lambda: self._export_geometry('svg')).pack(side=LEFT, padx=(0, PAD_S))
+        ttk.Button(export_buttons_frame, text="DXF", bootstyle="secondary-outline",
+                  command=lambda: self._export_geometry('dxf')).pack(side=LEFT, padx=(0, PAD_S))
+        ttk.Button(export_buttons_frame, text="PDF", bootstyle="secondary-outline",
+                  command=lambda: self._export_geometry('pdf')).pack(side=LEFT, padx=(0, PAD_S))
 
         # Quick export from selected design
-        ttk.Separator(export_buttons_frame, orient='vertical').pack(side=LEFT, fill='y', padx=5)
-        ttk.Button(export_buttons_frame, text="Export Selected Design",
-                  command=self._export_selected_design,
-                  style='Accent.TButton').pack(side=LEFT, padx=2)
+        ttk.Separator(export_buttons_frame, orient='vertical').pack(side=LEFT, fill='y', padx=PAD_S)
+        ttk.Button(export_buttons_frame, text="Export Selected Design", bootstyle="success",
+                  command=self._export_selected_design).pack(side=LEFT)
 
         # Library stats
-        stats_frame = ttk.Frame(parent)
-        stats_frame.pack(fill='x', padx=5, pady=(0, 5))
+        stats_frame = ttk.Frame(parent, padding=(PAD_M, 0, PAD_M, PAD_S))
+        stats_frame.pack(fill='x')
 
         self.library_stats_var = StringVar()
         stats_label = ttk.Label(stats_frame, textvariable=self.library_stats_var,
-                               font=('Arial', 9, 'italic'))
+                               font=('Segoe UI', 9, 'italic'), bootstyle="secondary")
         stats_label.pack(side=RIGHT)
 
         # Delay initial design loading to ensure UI is fully initialized
@@ -2995,7 +2958,7 @@ Performance Metrics:
 
                 ttk.Label(notes_dialog, text="Design Notes:").pack(pady=(10, 0))
 
-                notes_text = ScrolledText(notes_dialog, height=15, wrap=WORD)
+                notes_text = self._register_text(ScrolledText(notes_dialog, height=15, wrap=WORD))
                 notes_text.pack(fill='both', expand=True, padx=10, pady=5)
                 notes_text.insert(END, metadata.custom_notes)
 
@@ -3869,7 +3832,7 @@ Click OK to continue with an empty design library.
 
         # Instruction text
         ttk.Label(save_prompt, text="Tip: You can always save designs manually from the toolbar above",
-                 font=('Segoe UI', 8), foreground='#666666').pack(pady=(0, 10))
+                 font=('Segoe UI', 8), bootstyle="secondary").pack(pady=(0, 10))
 
 
     def _on_contact_pads_changed(self):
@@ -3966,7 +3929,7 @@ def main():
             sys.exit(1)
 
     try:
-        root = Tk()
+        root = ttk.Window(themename=AntennaDesignerGUI.LIGHT_THEME)
         app = AntennaDesignerGUI(root)
 
         # Handle window close gracefully
