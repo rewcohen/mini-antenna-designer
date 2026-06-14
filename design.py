@@ -1008,17 +1008,21 @@ class AdvancedMeanderTrace:
             # Convert frequency to MHz
             frequency_mhz = frequency_hz / 1e6
 
-            # Calculate wavelength in inches (matches simple meander calculation)
+            # Free-space wavelength in inches.
             wavelength_inches = 11802.7 / frequency_mhz
 
-            # Half-wave dipole length with velocity factor
-            # Using kc as the velocity/length factor (similar to length_ratio in simple meander)
-            target_length_inches = (wavelength_inches / 2) * kc
+            # Guided half-wave length: the wave travels slower in the substrate, so
+            # the guided wavelength is lambda0 / sqrt(er_eff) (velocity factor). The
+            # physical resonant length is lambda_g / 2; kc stays as the meander
+            # loading factor. Higher-er substrates therefore need shorter traces.
+            er_eff_safe = er_eff if (er_eff and er_eff >= 1.0) else 1.0
+            velocity_factor = math.sqrt(er_eff_safe)
+            target_length_inches = (wavelength_inches / (2 * velocity_factor)) * kc
 
             # Convert to meters
             target_length_meters = target_length_inches * 0.0254
 
-            logger.info(f"Target length: f={frequency_mhz:.1f}MHz, kc={kc:.2f}, L_target={target_length_inches:.2f}\" ({target_length_meters*1000:.1f}mm)")
+            logger.info(f"Target length: f={frequency_mhz:.1f}MHz, er_eff={er_eff_safe:.3f}, kc={kc:.2f}, L_target={target_length_inches:.2f}\" ({target_length_meters*1000:.1f}mm)")
 
             return target_length_meters
 
