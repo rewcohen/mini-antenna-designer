@@ -964,6 +964,7 @@ Click "Generate ASCII Analysis" after creating a design to see:
                 self.band_map[display_name] = band_key
 
             self.band_combo['values'] = band_names
+            self._autosize_combo_popdown(self.band_combo)
             # Set default to WiFi 2.4GHz if available
             default_selection = None
             for name in band_names:
@@ -977,6 +978,28 @@ Click "Generate ASCII Analysis" after creating a design to see:
 
         except Exception as e:
             self._show_error(f"Error loading band presets: {str(e)}")
+
+    def _autosize_combo_popdown(self, combo):
+        """Widen a Combobox's dropdown list to fit its longest item.
+
+        The entry field stays its grid-managed width, but the popdown
+        listbox (which otherwise inherits the entry's narrow width and
+        clips long text) is sized to the longest value, capped so it
+        never grows past what a maximized window can show.
+        """
+        try:
+            values = combo['values']
+            if not values:
+                return
+            max_len = max(len(str(v)) for v in values)
+            # A little breathing room; cap to keep the popup sane.
+            target = min(max_len + 2, 100)
+            popdown = combo.tk.call('ttk::combobox::PopdownWindow', combo)
+            listbox = f'{popdown}.f.l'
+            combo.tk.call(listbox, 'configure', '-width', target)
+        except Exception:
+            # Cosmetic only — never let popup sizing break the UI.
+            pass
 
     def _on_band_selected(self, event):
         """Handle band selection from dropdown - populate frequency fields."""
