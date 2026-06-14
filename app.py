@@ -223,7 +223,20 @@ class AntennaDesignerApp:
         self.session.notify(EVT_GENERATED)
 
     def _open_library(self):
-        messagebox.showinfo("Library", "Library browser lands in a later phase.")
+        from gui.library_view import LibraryDialog
+        LibraryDialog(self.root, self.storage, self._load_from_library)
+
+    def _load_from_library(self, metadata, geometry):
+        """Bring a saved design into the session and render it on the canvas."""
+        self.session.geometry = geometry
+        self.session.results = {"design_type": getattr(metadata, "design_type", ""),
+                                "metrics": getattr(metadata, "performance_metrics", {}) or {},
+                                "validation": {}, "success": True}
+        meta = {"band_name": getattr(metadata, "band_name", ""),
+                "frequencies": getattr(metadata, "frequencies_mhz", None)}
+        self.session.svg = geometry_to_svg(self.exporter, geometry, meta)
+        self.status_var.set(f"Loaded '{getattr(metadata, 'name', 'design')}' from library")
+        self.session.notify(EVT_GENERATED)
 
     def _stub(self):
         messagebox.showinfo("Coming soon", "This tool is not wired up yet.")

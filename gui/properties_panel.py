@@ -26,7 +26,11 @@ class PropertiesPanel:
         self.frame = scroll.outer
         self.body = scroll.body
 
-        ttk.Label(self.body, text="Performance", font=("", 10, "bold")).pack(anchor="w")
+        head = ttk.Frame(self.body)
+        head.pack(fill=X)
+        ttk.Label(head, text="Performance", font=("", 10, "bold")).pack(side="left")
+        ttk.Button(head, text="Analysis…", bootstyle=SECONDARY,
+                   command=self._open_analysis).pack(side="right")
         self.chips = ttk.Frame(self.body)
         self.chips.pack(fill=X, pady=(PAD_S, PAD_M))
 
@@ -47,6 +51,12 @@ class PropertiesPanel:
                   bootstyle=SECONDARY, justify="left").pack(anchor="w")
 
         session.subscribe(self._refresh)
+
+    def _open_analysis(self):
+        if not self.session.has_design:
+            return
+        from gui.analysis_view import AnalysisDialog
+        AnalysisDialog(self.body.winfo_toplevel(), self.session)
 
     def _refresh(self, event: str):
         if event != EVT_GENERATED or not self.session.results:
