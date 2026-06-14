@@ -45,8 +45,11 @@ class TraceStep:
         ttk.Checkbutton(adv, text="Add contact pads for soldering", variable=self.pads,
                         bootstyle="round-toggle", command=self._on_pads).pack(
             anchor="w", pady=(PAD_S, 0))
+        self.pad_info = ttk.Label(adv, text="")
+        self.pad_info.pack(anchor="w", pady=(PAD_S, 0))
 
         self._update_trace_label()
+        self._update_pad_info()
 
     def _slider(self, parent, label, lo, hi, value, attr):
         row = ttk.Frame(parent)
@@ -67,6 +70,7 @@ class TraceStep:
     def _on_trace(self, v):
         self.session.trace_width_mil = round(float(v), 1)
         self._update_trace_label()
+        self._update_pad_info()
         self.session.notify(EVT_INPUTS)
 
     def _update_trace_label(self):
@@ -75,4 +79,16 @@ class TraceStep:
 
     def _on_pads(self):
         self.session.add_contact_pads = self.pads.get()
+        self._update_pad_info()
         self.session.notify(EVT_INPUTS)
+
+    def _update_pad_info(self):
+        try:
+            if self.pads.get():
+                text = (f"Contact pads: 2× trace width "
+                        f"(≈ {self.session.trace_width_mil * 2:.0f} mil)")
+            else:
+                text = "Contact pads: off"
+        except (TypeError, ValueError):
+            text = "Contact pads: —"
+        self.pad_info.configure(text=text)

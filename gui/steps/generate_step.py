@@ -7,12 +7,14 @@ lands. Set ``ANTENNA_REDUCED_MOTION=1`` to drop the tweens and jump between stat
 """
 from __future__ import annotations
 
+import math
 import os
-from typing import Callable
+from typing import Callable, Optional
 from tkinter import X, StringVar, DoubleVar
 import ttkbootstrap as ttk
 from ttkbootstrap.constants import PRIMARY, DANGER, SUCCESS
 
+from design import AdvancedMeanderTrace
 from gui.session import DesignSession, EVT_GENERATED, EVT_BAND
 
 from gui.constants import PAD_S, PAD_M
@@ -108,14 +110,58 @@ class GenerateStep:
                 pass
             self._tween_job = None
 
+    def _estimate_line(self, freqs) -> Optional[str]:
+        """Per-band target trace-length estimate, mirroring legacy ui.py's preview.
+
+        Returns a short feasibility line (target lengths in inches + a fit hint)
+        or ``None`` if the inputs can't be turned into a sensible estimate. Any
+        bad/missing input is swallowed: the caller just drops the extra line.
+        """
+        try:
+            s = self.session
+            meander = AdvancedMeanderTrace(s.substrate_width, s.substrate_height)
+            meander.substrate_epsilon = s.substrate_epsilon
+            meander.substrate_thickness = s.substrate_thickness_mm / 1000.0  # mm -> m
+            trace_w_m = s.trace_width_mil / 39370.0                          # mil -> m
+
+            lengths_in = []
+            for freq in freqs:
+                e_eff = meander.calculate_effective_permittivity(
+                    s.substrate_epsilon, meander.substrate_thickness, trace_w_m)
+                l_m = meander.calculate_target_length(
+                    freq * 1e6, e_eff, s.coupling_factor)
+                lengths_in.append(l_m * 39.3701)  # m -> in
+
+            if not lengths_in or not all(math.isfinite(x) for x in lengths_in):
+                return None
+
+            total_in = sum(lengths_in)
+            diag_in = math.hypot(s.substrate_width, s.substrate_height)
+            line = ("Est. target length: "
+                    + " / ".join(f"{x:.1f}" for x in lengths_in)
+                    + f" in  (total {total_in:.1f} in, board diag {diag_in:.1f} in)")
+
+            # Rough serpentine-capacity heuristic: usable trace per band before the
+            # meander gets dense. Honest, not a hard limit.
+            capacity_in = s.substrate_width * s.substrate_height * 8
+            if max(lengths_in) > capacity_in:
+                line += " — tight fit, expect dense meander"
+            return line
+        except Exception:
+            return None
+
     def _refresh(self, event: str):
         freqs = self.session.frequencies_mhz()
         name = self.session.band.name if self.session.band else None
         if freqs and name:
-            self.summary.set(f"{name}: {freqs[0]:g}/{freqs[1]:g}/{freqs[2]:g} MHz"
-                             f" on {self.session.substrate_width:g}×"
-                             f"{self.session.substrate_height:g} in, "
-                             f"{self.session.trace_width_mil:.0f} mil traces.")
+            text = (f"{name}: {freqs[0]:g}/{freqs[1]:g}/{freqs[2]:g} MHz"
+                    f" on {self.session.substrate_width:g}×"
+                    f"{self.session.substrate_height:g} in, "
+                    f"{self.session.trace_width_mil:.0f} mil traces.")
+            est = self._estimate_line(freqs)
+            if est:
+                text += "\n" + est
+            self.summary.set(text)
         else:
             self.summary.set("Pick a band first.")
         if event == EVT_GENERATED and self.session.results and self.session.has_design:
