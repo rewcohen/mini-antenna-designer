@@ -67,12 +67,25 @@ python app.py                  # new GUI directly
 - Fixed: properties panel crashed on non-numeric VSWR from tuned designs (now guarded).
 
 ## Remaining work (not yet ported from `ui.py`)
-1. ASCII band-analysis charts (`_create_ascii_charts`, ui.py:3399).
-2. Matplotlib band-comparison charts (`band_chart.py`, ui.py:3087+).
-3. Contact-pad live info text (`_on_contact_pads_changed`, ui.py:3861).
-4. Raw NEC geometry text view (ui.py:1609).
-5. Target-length preview estimate via `AdvancedMeanderTrace` (ui.py:2240) — generate step currently shows a settings summary only.
-6. Then: feature-parity checklist vs `ui.py`, flip `main.py` default to `app`, retire `ui.py`.
+~~1. ASCII band-analysis charts~~ — DONE (analysis dialog "Band Analysis" tab).
+~~2. Matplotlib band-comparison charts~~ — DONE (analysis dialog "Comparison Chart" tab, on-demand, guarded).
+~~3. Contact-pad live info text~~ — DONE (trace step, tracks toggle + width slider).
+~~4. Raw NEC geometry text view~~ — DONE (analysis dialog "NEC Geometry" tab + Copy).
+~~5. Target-length preview estimate~~ — DONE (generate step shows per-band est. length + total + tight-fit hint).
+6. Remaining: feature-parity checklist vs `ui.py`, flip `main.py` default to `app`, retire `ui.py`.
+
+## Design-critique polish (commit 705d95e)
+A `/impeccable critique` pass (pass 2, with live screenshots; snapshot in
+`.impeccable/critique/`) drove a polish round:
+- Canvas now fits-to-viewport + centers; toggleable overlay layers
+  (Feed/Pattern/Grid/Details) — clean traces+feed preview by default.
+- `export._generate_svg_content` gates layers via `metadata['layers']`
+  (default all-on → exports/thumbnails unchanged); fixed a text y-collision.
+- Light-theme contrast fixed (`secondary-outline` buttons, dark body text);
+  unified selected state to PRIMARY; keyboard shortcuts + Esc on dialogs.
+- VSWR formatted (`>10` cap) + "barely radiates" note; New confirms; Stop
+  disabled when idle; band cards one-column (no clipping).
+- `PAD_*` spacing centralized in `gui/constants.py`.
 
 ## Notes / gotchas
 - `FrequencyBand` field is `.frequencies` (not `.frequencies_mhz`); `DesignMetadata` uses `frequencies_mhz` / `trace_width_mil`.
